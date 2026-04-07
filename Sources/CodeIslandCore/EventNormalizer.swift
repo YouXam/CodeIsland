@@ -20,6 +20,13 @@ public enum EventNormalizer {
         case "AfterTool":             return "PostToolUse"
         case "BeforeAgent":           return "SubagentStart"
         case "AfterAgent":            return "SubagentStop"
+        // GitHub Copilot CLI
+        case "sessionStart":          return "SessionStart"
+        case "sessionEnd":            return "SessionEnd"
+        case "userPromptSubmitted":   return "UserPromptSubmit"
+        case "preToolUse":            return "PreToolUse"
+        case "postToolUse":           return "PostToolUse"
+        case "errorOccurred":         return "Notification"
         default:                      return name
         }
     }

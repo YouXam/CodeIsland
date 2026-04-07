@@ -30,6 +30,8 @@ struct MascotView: View {
                 GeminiView(status: status, size: size)
             case "cursor":
                 CursorView(status: status, size: size)
+            case "copilot":
+                CopilotView(status: status, size: size)
             case "qoder":
                 QoderView(status: status, size: size)
             case "droid":

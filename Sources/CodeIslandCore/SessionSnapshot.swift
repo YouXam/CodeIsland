@@ -12,6 +12,7 @@ public struct SessionSnapshot {
         "codex",
         "gemini",
         "cursor",
+        "copilot",
         "qoder",
         "droid",
         "codebuddy",

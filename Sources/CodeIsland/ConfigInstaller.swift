@@ -20,6 +20,8 @@ enum HookFormat {
     case nested
     /// Cursor style: [{command: "..."}]
     case flat
+    /// GitHub Copilot CLI style: [{type, bash, timeoutSec}] with top-level version
+    case copilot
 }
 
 /// A CLI tool that supports hooks
@@ -171,6 +173,20 @@ struct ConfigInstaller {
                 ("PreCompact", 5, true),
             ]
         ),
+        // GitHub Copilot CLI
+        CLIConfig(
+            name: "Copilot", source: "copilot",
+            configPath: ".copilot/hooks/codeisland.json", configKey: "hooks",
+            format: .copilot,
+            events: [
+                ("sessionStart", 5, false),
+                ("sessionEnd", 5, true),
+                ("userPromptSubmitted", 5, false),
+                ("preToolUse", 5, false),
+                ("postToolUse", 5, true),
+                ("errorOccurred", 5, true),
+            ]
+        ),
     ]
 
     /// Non-Claude CLIs (installed via bridge binary directly)
@@ -277,6 +293,7 @@ struct ConfigInstaller {
     /// Check if CLI directory exists (tool is installed on this machine)
     static func cliExists(source: String) -> Bool {
         if source == "opencode" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.config/opencode") }
+        if source == "copilot" { return FileManager.default.fileExists(atPath: NSHomeDirectory() + "/.copilot") }
         guard let cli = allCLIs.first(where: { $0.source == source }) else { return false }
         return FileManager.default.fileExists(atPath: cli.dirPath)
     }
@@ -330,7 +347,10 @@ struct ConfigInstaller {
         var repaired: [String] = []
         for cli in allCLIs {
             guard isEnabled(source: cli.source) else { continue }
-            guard fm.fileExists(atPath: cli.dirPath) else { continue }
+            let dirExists = cli.format == .copilot
+                ? fm.fileExists(atPath: NSHomeDirectory() + "/.copilot")
+                : fm.fileExists(atPath: cli.dirPath)
+            guard dirExists else { continue }
             if isHooksInstalled(for: cli, fm: fm) { continue }
             if cli.source == "claude" {
                 if installClaudeHooks(cli: cli, fm: fm) {
@@ -540,7 +560,16 @@ struct ConfigInstaller {
 
     @discardableResult
     private static func installExternalHooks(cli: CLIConfig, fm: FileManager) -> Bool {
-        guard fm.fileExists(atPath: cli.dirPath) else { return true } // CLI not installed, skip OK
+        if cli.format == .copilot {
+            // Copilot: check root ~/.copilot exists, create hooks subdir if needed
+            let rootDir = NSHomeDirectory() + "/.copilot"
+            guard fm.fileExists(atPath: rootDir) else { return true }
+            if !fm.fileExists(atPath: cli.dirPath) {
+                try? fm.createDirectory(atPath: cli.dirPath, withIntermediateDirectories: true)
+            }
+        } else {
+            guard fm.fileExists(atPath: cli.dirPath) else { return true } // CLI not installed, skip OK
+        }
 
         var root: [String: Any] = [:]
         if let json = parseJSONFile(at: cli.fullPath, fm: fm) {
@@ -550,7 +579,7 @@ struct ConfigInstaller {
         var hooks = root[cli.configKey] as? [String: Any] ?? [:]
         // Quote the path in case home directory contains spaces or special characters
         let quotedBridge = bridgeCommand.contains(" ") ? "\"\(bridgeCommand)\"" : bridgeCommand
-        let command = "\(quotedBridge) --source \(cli.source)"
+        let baseCommand = "\(quotedBridge) --source \(cli.source)"
 
         for (event, timeout, _) in cli.events {
             var eventEntries = hooks[event] as? [[String: Any]] ?? []
@@ -560,17 +589,25 @@ struct ConfigInstaller {
             let entry: [String: Any]
             switch cli.format {
             case .claude:
-                entry = ["matcher": "*", "hooks": [["type": "command", "command": command] as [String: Any]]]
+                entry = ["matcher": "*", "hooks": [["type": "command", "command": baseCommand] as [String: Any]]]
             case .nested:
-                entry = ["hooks": [["type": "command", "command": command, "timeout": timeout] as [String: Any]]]
+                entry = ["hooks": [["type": "command", "command": baseCommand, "timeout": timeout] as [String: Any]]]
             case .flat:
-                entry = ["command": command]
+                entry = ["command": baseCommand]
+            case .copilot:
+                // Copilot CLI stdin lacks session_id/hook_event_name — pass event name via flag
+                let copilotCommand = "\(baseCommand) --event \(event)"
+                entry = ["type": "command", "bash": copilotCommand, "timeoutSec": timeout]
             }
             eventEntries.append(entry)
             hooks[event] = eventEntries
         }
 
         root[cli.configKey] = hooks
+        // Copilot CLI requires a top-level "version" field
+        if cli.format == .copilot {
+            root["version"] = 1
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys]) else {
             return false
         }
@@ -681,6 +718,8 @@ struct ConfigInstaller {
         }
         // Flat format: entry.command
         if let cmd = entry["command"] as? String, HookId.isOurs(cmd) { return true }
+        // Copilot format: entry.bash
+        if let cmd = entry["bash"] as? String, HookId.isOurs(cmd) { return true }
         return false
     }
 
