@@ -1,54 +1,14 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  build-and-release:
-    runs-on: macos-15
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
-
-      # Uncomment and configure the following steps to enable code signing:
-      # - name: Import code signing certificate
-      #   env:
-      #     CERTIFICATE_P12_BASE64: ${{ secrets.CERTIFICATE_P12_BASE64 }}
-      #     CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
-      #   run: |
-      #     echo "$CERTIFICATE_P12_BASE64" | base64 --decode > certificate.p12
-      #     security create-keychain -p "" build.keychain
-      #     security import certificate.p12 -k build.keychain -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-      #     security list-keychains -s build.keychain
-      #     security default-keychain -s build.keychain
-      #     security unlock-keychain -p "" build.keychain
-      #     security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
-
-      - name: Install create-dmg
-        run: brew install create-dmg
-
-      - name: Build DMG
-        run: ./scripts/build-dmg.sh "$VERSION"
-
-      - name: Extract release notes
-        run: ./scripts/extract-changelog.sh "$VERSION" > release-notes.md
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          body_path: release-notes.md
-          files: .build/CodeIsland.dmg
-
   update-homebrew:
-    needs: build-and-release
     runs-on: ubuntu-latest
     steps:
       - name: Extract version from tag
