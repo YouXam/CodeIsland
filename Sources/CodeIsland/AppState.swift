@@ -74,15 +74,22 @@ final class AppState {
             removeSession(sessionId)
         }
 
-        // 2. Reset stuck sessions: if active but no events for 3 minutes
-        //    Skip sessions with a live process monitor — the process is still running,
-        //    it's just a long operation (e.g. slow build, deep thinking), not stuck.
-        let stuckCutoff = Date().addingTimeInterval(-180)
-        for (key, session) in sessions where session.status != .idle && session.status != .waitingApproval && session.status != .waitingQuestion && session.lastActivity < stuckCutoff {
-            if processMonitors[key] != nil { continue }
-            sessions[key]?.status = .idle
-            sessions[key]?.currentTool = nil
-            sessions[key]?.toolDescription = nil
+        // 2. Reset stuck sessions
+        //    - processing with no tool (e.g. lost Stop event): 60 seconds
+        //    - running/processing with a tool: 3 minutes (long build, deep thinking)
+        //    Skip sessions with a live process monitor for the long timeout.
+        for (key, session) in sessions where session.status != .idle && session.status != .waitingApproval && session.status != .waitingQuestion {
+            let elapsed = -session.lastActivity.timeIntervalSinceNow
+            if session.status == .processing && session.currentTool == nil && elapsed > 60 {
+                sessions[key]?.status = .idle
+                sessions[key]?.currentTool = nil
+                sessions[key]?.toolDescription = nil
+            } else if elapsed > 180 {
+                if processMonitors[key] != nil { continue }
+                sessions[key]?.status = .idle
+                sessions[key]?.currentTool = nil
+                sessions[key]?.toolDescription = nil
+            }
         }
 
         // 3. Remove idle sessions past timeout (user setting, or 10 min default for no-monitor sessions)

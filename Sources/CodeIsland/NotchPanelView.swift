@@ -856,18 +856,11 @@ private struct SessionListView: View {
 
                 ForEach(group.ids, id: \.self) { sessionId in
                     if let session = appState.sessions[sessionId] {
-                        let isStale = session.status == .idle && session.lastActivity.timeIntervalSinceNow < -900
-                        Group {
-                            if isStale {
-                                CollapsedSessionRow(session: session, sessionId: sessionId)
-                            } else {
-                                SessionCard(
-                                    sessionId: sessionId,
-                                    session: session,
-                                    isCompletion: onlySessionId != nil
-                                )
-                            }
-                        }
+                        SessionCard(
+                            sessionId: sessionId,
+                            session: session,
+                            isCompletion: onlySessionId != nil
+                        )
                     }
                 }
             }
@@ -1476,39 +1469,6 @@ private struct NotchPanelShape: Shape {
 }
 
 /// Collapsed single-line row for idle sessions >15 min
-private struct CollapsedSessionRow: View {
-    let session: SessionSnapshot
-    let sessionId: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Circle()
-                .fill(.white.opacity(0.2))
-                .frame(width: 6, height: 6)
-            SessionIdentityLine(
-                session: session,
-                sessionId: sessionId,
-                projectFontSize: 11,
-                projectColor: .white.opacity(0.42),
-                sessionFontSize: 10,
-                sessionColor: .white.opacity(0.32),
-                dividerColor: .white.opacity(0.18),
-                cardHovering: false
-            )
-            if let prompt = session.lastUserPrompt {
-                Text("– \(prompt)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.25))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-            }
-            Spacer()
-            TerminalJumpButton(session: session, sessionId: sessionId)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 4)
-    }
-}
 private struct TerminalJumpButton: View {
     let session: SessionSnapshot
     let sessionId: String

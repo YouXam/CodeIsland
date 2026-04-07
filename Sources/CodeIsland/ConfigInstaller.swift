@@ -63,6 +63,8 @@ struct ConfigInstaller {
             events: [
                 ("SessionStart", 5, false),
                 ("UserPromptSubmit", 5, false),
+                ("PreToolUse", 5, false),
+                ("PostToolUse", 5, false),
                 ("Stop", 5, false),
             ]
         ),
@@ -282,6 +284,7 @@ struct ConfigInstaller {
                 return installClaudeHooks(cli: cli, fm: fm)
             } else {
                 installExternalHooks(cli: cli, fm: fm)
+                if cli.source == "codex" { enableCodexHooksConfig(fm: fm) }
                 return isHooksInstalled(for: cli, fm: fm)
             }
         } else {
@@ -312,10 +315,16 @@ struct ConfigInstaller {
                 }
             } else {
                 installExternalHooks(cli: cli, fm: fm)
+                if cli.source == "codex" { enableCodexHooksConfig(fm: fm) }
                 if isHooksInstalled(for: cli, fm: fm) {
                     repaired.append(cli.name)
                 }
             }
+        }
+        // Codex config.toml: ensure codex_hooks = true
+        if isEnabled(source: "codex"),
+           fm.fileExists(atPath: NSHomeDirectory() + "/.codex") {
+            enableCodexHooksConfig(fm: fm)
         }
         // OpenCode plugin
         if isEnabled(source: "opencode"),
@@ -470,6 +479,48 @@ struct ConfigInstaller {
             return false
         }
         return fm.createFile(atPath: cli.fullPath, contents: data)
+    }
+
+    // MARK: - Codex config.toml
+
+    /// Ensure codex_hooks = true under [features] in ~/.codex/config.toml
+    /// so Codex actually fires hook events.
+    @discardableResult
+    private static func enableCodexHooksConfig(fm: FileManager) -> Bool {
+        let configPath = NSHomeDirectory() + "/.codex/config.toml"
+        var contents = ""
+        if fm.fileExists(atPath: configPath) {
+            contents = (try? String(contentsOfFile: configPath, encoding: .utf8)) ?? ""
+        }
+
+        // Already set to true somewhere — don't touch
+        if contents.range(of: #"codex_hooks\s*=\s*true"#, options: .regularExpression) != nil {
+            return true
+        }
+
+        // Set to false — flip it to true in place
+        if contents.range(of: #"codex_hooks\s*=\s*false"#, options: .regularExpression) != nil {
+            contents = contents.replacingOccurrences(
+                of: #"codex_hooks\s*=\s*false"#,
+                with: "codex_hooks = true",
+                options: .regularExpression
+            )
+            return fm.createFile(atPath: configPath, contents: contents.data(using: .utf8))
+        }
+
+        // Not present — insert into [features] section or create it
+        var lines = contents.components(separatedBy: "\n")
+        if let featIdx = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "[features]" }) {
+            // Insert after [features] line
+            lines.insert("codex_hooks = true", at: featIdx + 1)
+        } else {
+            // No [features] section — append one
+            if !lines.last!.isEmpty { lines.append("") }
+            lines.append("[features]")
+            lines.append("codex_hooks = true")
+        }
+        let result = lines.joined(separator: "\n")
+        return fm.createFile(atPath: configPath, contents: result.data(using: .utf8))
     }
 
     // MARK: - Uninstall (generic)

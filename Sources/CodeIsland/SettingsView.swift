@@ -578,14 +578,16 @@ private struct MascotsPage: View {
                 HStack {
                     Text(l10n["mascot_speed"])
                     Spacer()
-                    Text(String(format: "%.1f×", Double(mascotSpeed) / 100.0))
+                    Text(mascotSpeed == 0
+                         ? l10n["speed_off"]
+                         : String(format: "%.1f×", Double(mascotSpeed) / 100.0))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
                 Slider(value: Binding(
                     get: { Double(mascotSpeed) },
                     set: { mascotSpeed = Int($0) }
-                ), in: 25...300, step: 25)
+                ), in: 0...300, step: 25)
             }
 
             Section {
