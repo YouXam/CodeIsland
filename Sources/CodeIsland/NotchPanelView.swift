@@ -117,11 +117,13 @@ struct NotchPanelView: View {
                                 question: q.question.question,
                                 options: q.question.options,
                                 descriptions: q.question.descriptions,
+                                allQuestions: q.askUserQuestionState?.items ?? [],
                                 sessionSource: session?.source,
                                 sessionContext: session?.cwd,
                                 queuePosition: 1,
                                 queueTotal: appState.questionQueue.count,
                                 onAnswer: { appState.answerQuestion($0) },
+                                onAnswerMulti: { appState.answerQuestionMulti($0) },
                                 onSkip: { appState.skipQuestion() }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
@@ -130,11 +132,13 @@ struct NotchPanelView: View {
                                 question: preview.question,
                                 options: preview.options,
                                 descriptions: preview.descriptions,
+                                allQuestions: [],
                                 sessionSource: session?.source,
                                 sessionContext: session?.cwd,
                                 queuePosition: 1,
                                 queueTotal: 1,
                                 onAnswer: { _ in },
+                                onAnswerMulti: { _ in },
                                 onSkip: { }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
@@ -850,18 +854,34 @@ private struct QuestionBar: View {
     let question: String
     let options: [String]?
     let descriptions: [String]?
+    /// All AskUserQuestion items (1-4). Empty for legacy Notification questions.
+    let allQuestions: [AskUserQuestionItem]
     let sessionSource: String?
     let sessionContext: String?
     let queuePosition: Int
     let queueTotal: Int
     let onAnswer: (String) -> Void
+    let onAnswerMulti: ([(question: String, answer: String)]) -> Void
     let onSkip: () -> Void
 
     @State private var textInput = ""
     @FocusState private var isFocused: Bool
     @State private var selectedIndex: Int? = nil
 
+    // Multi-question wizard state
+    @State private var currentQuestionIndex: Int = 0
+    @State private var collectedAnswers: [(question: String, answer: String)] = []
+    @State private var selectedIndices: Set<Int> = []
+    @State private var showOtherInput: Bool = false
+    @State private var otherText: String = ""
+    @FocusState private var otherFocused: Bool
+
     private let cyan = Color(red: 0.4, green: 0.7, blue: 1.0)
+
+    private var currentItem: AskUserQuestionItem? {
+        guard !allQuestions.isEmpty, currentQuestionIndex < allQuestions.count else { return nil }
+        return allQuestions[currentQuestionIndex]
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -886,89 +906,377 @@ private struct QuestionBar: View {
                 .padding(.horizontal, 14)
             }
 
-            // Header
-            HStack(spacing: 6) {
-                Text("?")
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(cyan)
-                Text(question)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .lineLimit(3)
-                if queueTotal > 1 {
-                    Text("\(queuePosition)/\(queueTotal)")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-                Spacer()
-            }
-            .padding(.horizontal, 14)
-
-            // Options
-            if let options = options, !options.isEmpty {
-                VStack(spacing: 4) {
-                    ForEach(Array(options.enumerated()), id: \.offset) { idx, option in
-                        let desc = descriptions?.indices.contains(idx) == true ? descriptions?[idx] : nil
-                        OptionRow(index: idx + 1, label: option, description: desc, isSelected: selectedIndex == idx, accent: cyan) {
-                            selectedIndex = idx
-                            onAnswer(option)
-                        }
-                    }
-                }
-                .padding(.horizontal, 14)
+            if let item = currentItem {
+                multiQuestionContent(item)
             } else {
-                // Text input
-                HStack(spacing: 6) {
-                    Text(">")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
-                    TextField(L10n.shared["type_answer"], text: $textInput)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 10.5, design: .monospaced))
-                        .foregroundStyle(.white)
-                        .focused($isFocused)
-                        .onSubmit {
-                            if !textInput.isEmpty { onAnswer(textInput) }
-                        }
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.05))
-                .cornerRadius(4)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                )
-                .padding(.horizontal, 14)
+                legacyQuestionContent
             }
-
-            // Skip button
-            HStack(spacing: 6) {
-                PixelButton(
-                    label: L10n.shared["skip"],
-                    fg: .white.opacity(0.6),
-                    bg: Color.white.opacity(0.06),
-                    border: Color.white.opacity(0.12),
-                    action: onSkip
-                )
-                if options == nil || options?.isEmpty == true {
-                    PixelButton(
-                        label: L10n.shared["submit"],
-                        fg: .white.opacity(0.95),
-                        bg: Color(red: 0.16, green: 0.38, blue: 0.18),
-                        border: Color(red: 0.28, green: 0.62, blue: 0.32),
-                        action: { if !textInput.isEmpty { onAnswer(textInput) } }
-                    )
-                }
-            }
-            .padding(.horizontal, 14)
         }
         .padding(.vertical, 10)
         .onAppear { isFocused = true }
+    }
+
+    // MARK: - Multi-question content (AskUserQuestion)
+
+    @ViewBuilder
+    private func multiQuestionContent(_ item: AskUserQuestionItem) -> some View {
+        // Header with progress
+        HStack(spacing: 6) {
+            Text("?")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(cyan)
+            if let header = item.payload.header, !header.isEmpty {
+                Text(header)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(cyan.opacity(0.7))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(cyan.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+            Text(item.payload.question)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(3)
+            Spacer()
+            if allQuestions.count > 1 {
+                Text("\(currentQuestionIndex + 1)/\(allQuestions.count)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+            if queueTotal > 1 {
+                Text("\(queuePosition)/\(queueTotal)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.4))
+            }
+        }
+        .padding(.horizontal, 14)
+
+        // Options
+        if let opts = item.payload.options, !opts.isEmpty {
+            VStack(spacing: 4) {
+                ForEach(Array(opts.enumerated()), id: \.offset) { idx, option in
+                    let desc = item.payload.descriptions?.indices.contains(idx) == true ? item.payload.descriptions?[idx] : nil
+                    if item.multiSelect {
+                        MultiSelectRow(index: idx + 1, label: option, description: desc,
+                                       isChecked: selectedIndices.contains(idx), accent: cyan) {
+                            if selectedIndices.contains(idx) {
+                                selectedIndices.remove(idx)
+                            } else {
+                                selectedIndices.insert(idx)
+                            }
+                        }
+                    } else {
+                        OptionRow(index: idx + 1, label: option, description: desc,
+                                  isSelected: selectedIndex == idx, accent: cyan) {
+                            selectedIndex = idx
+                            showOtherInput = false
+                            advanceWithAnswer(option)
+                        }
+                    }
+                }
+
+                // "Other" option
+                otherOptionRow(isMultiSelect: item.multiSelect)
+
+                // "Other" text input
+                if showOtherInput {
+                    HStack(spacing: 6) {
+                        Text(">")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                        TextField(L10n.shared["type_answer"], text: $otherText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundStyle(.white)
+                            .focused($otherFocused)
+                            .onSubmit {
+                                if !item.multiSelect && !otherText.isEmpty {
+                                    advanceWithAnswer(otherText)
+                                }
+                            }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                    )
+                    .padding(.horizontal, 14)
+                    .onAppear { otherFocused = true }
+                }
+            }
+            .padding(.horizontal, 14)
+        } else {
+            // No options — text input only
+            HStack(spacing: 6) {
+                Text(">")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                TextField(L10n.shared["type_answer"], text: $textInput)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .focused($isFocused)
+                    .onSubmit {
+                        if !textInput.isEmpty { advanceWithAnswer(textInput) }
+                    }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            .padding(.horizontal, 14)
+        }
+
+        // Buttons
+        HStack(spacing: 6) {
+            if currentQuestionIndex > 0 {
+                PixelButton(
+                    label: L10n.shared["back"],
+                    fg: .white.opacity(0.6),
+                    bg: Color.white.opacity(0.06),
+                    border: Color.white.opacity(0.12),
+                    action: goBack
+                )
+            }
+            PixelButton(
+                label: L10n.shared["skip"],
+                fg: .white.opacity(0.6),
+                bg: Color.white.opacity(0.06),
+                border: Color.white.opacity(0.12),
+                action: onSkip
+            )
+            if item.multiSelect {
+                PixelButton(
+                    label: L10n.shared["confirm"],
+                    fg: .white.opacity(0.95),
+                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
+                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
+                    action: confirmMultiSelect
+                )
+            } else if item.payload.options == nil || item.payload.options?.isEmpty == true {
+                PixelButton(
+                    label: L10n.shared["submit"],
+                    fg: .white.opacity(0.95),
+                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
+                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
+                    action: { if !textInput.isEmpty { advanceWithAnswer(textInput) } }
+                )
+            } else if showOtherInput && !item.multiSelect {
+                PixelButton(
+                    label: L10n.shared["submit"],
+                    fg: .white.opacity(0.95),
+                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
+                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
+                    action: { if !otherText.isEmpty { advanceWithAnswer(otherText) } }
+                )
+            }
+        }
+        .padding(.horizontal, 14)
+    }
+
+    // MARK: - "Other" option row
+
+    @ViewBuilder
+    private func otherOptionRow(isMultiSelect: Bool) -> some View {
+        if isMultiSelect {
+            MultiSelectRow(index: -1, label: L10n.shared["other"], description: nil,
+                           isChecked: showOtherInput, accent: cyan) {
+                showOtherInput.toggle()
+                if !showOtherInput { otherText = "" }
+            }
+        } else {
+            OptionRow(index: -1, label: L10n.shared["other"], description: nil,
+                      isSelected: showOtherInput, accent: cyan) {
+                showOtherInput = true
+                selectedIndex = nil
+            }
+        }
+    }
+
+    // MARK: - Navigation
+
+    private func advanceWithAnswer(_ answer: String) {
+        guard let item = currentItem else { return }
+        collectedAnswers.append((question: item.payload.question, answer: answer))
+
+        if currentQuestionIndex + 1 < allQuestions.count {
+            withAnimation(NotchAnimation.micro) {
+                currentQuestionIndex += 1
+                resetQuestionState()
+            }
+        } else {
+            onAnswerMulti(collectedAnswers)
+        }
+    }
+
+    private func confirmMultiSelect() {
+        guard let item = currentItem, let opts = item.payload.options else { return }
+        var parts: [String] = selectedIndices.sorted().compactMap { idx in
+            opts.indices.contains(idx) ? opts[idx] : nil
+        }
+        if showOtherInput && !otherText.isEmpty {
+            parts.append(otherText)
+        }
+        guard !parts.isEmpty else { return }
+        advanceWithAnswer(parts.joined(separator: ", "))
+    }
+
+    private func goBack() {
+        guard currentQuestionIndex > 0, !collectedAnswers.isEmpty else { return }
+        collectedAnswers.removeLast()
+        withAnimation(NotchAnimation.micro) {
+            currentQuestionIndex -= 1
+            resetQuestionState()
+        }
+    }
+
+    private func resetQuestionState() {
+        selectedIndex = nil
+        selectedIndices = []
+        showOtherInput = false
+        otherText = ""
+        textInput = ""
+    }
+
+    // MARK: - Legacy single-question content (Notification-based)
+
+    @ViewBuilder
+    private var legacyQuestionContent: some View {
+        HStack(spacing: 6) {
+            Text("?")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(cyan)
+            Text(question)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.9))
+                .lineLimit(3)
+            if queueTotal > 1 {
+                Text("\(queuePosition)/\(queueTotal)")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.5))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 3))
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+
+        if let options = options, !options.isEmpty {
+            VStack(spacing: 4) {
+                ForEach(Array(options.enumerated()), id: \.offset) { idx, option in
+                    let desc = descriptions?.indices.contains(idx) == true ? descriptions?[idx] : nil
+                    OptionRow(index: idx + 1, label: option, description: desc, isSelected: selectedIndex == idx, accent: cyan) {
+                        selectedIndex = idx
+                        onAnswer(option)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+        } else {
+            HStack(spacing: 6) {
+                Text(">")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundStyle(Color(red: 0.3, green: 0.85, blue: 0.4))
+                TextField(L10n.shared["type_answer"], text: $textInput)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 10.5, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .focused($isFocused)
+                    .onSubmit {
+                        if !textInput.isEmpty { onAnswer(textInput) }
+                    }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.05))
+            .cornerRadius(4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+            )
+            .padding(.horizontal, 14)
+        }
+
+        HStack(spacing: 6) {
+            PixelButton(
+                label: L10n.shared["skip"],
+                fg: .white.opacity(0.6),
+                bg: Color.white.opacity(0.06),
+                border: Color.white.opacity(0.12),
+                action: onSkip
+            )
+            if options == nil || options?.isEmpty == true {
+                PixelButton(
+                    label: L10n.shared["submit"],
+                    fg: .white.opacity(0.95),
+                    bg: Color(red: 0.16, green: 0.38, blue: 0.18),
+                    border: Color(red: 0.28, green: 0.62, blue: 0.32),
+                    action: { if !textInput.isEmpty { onAnswer(textInput) } }
+                )
+            }
+        }
+        .padding(.horizontal, 14)
+    }
+}
+
+// MARK: - Multi-Select Row (checkbox style)
+
+private struct MultiSelectRow: View {
+    let index: Int
+    let label: String
+    let description: String?
+    let isChecked: Bool
+    let accent: Color
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: isChecked ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 11))
+                    .foregroundStyle(isChecked ? accent : .white.opacity(0.4))
+                    .frame(width: 14)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.system(size: 10.5, weight: hovering || isChecked ? .semibold : .regular, design: .monospaced))
+                        .foregroundStyle(.white.opacity(hovering || isChecked ? 1 : 0.75))
+                    if let description, !description.isEmpty {
+                        Text(description)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.45))
+                            .lineLimit(2)
+                    }
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(isChecked ? accent.opacity(0.08) : (hovering ? Color.white.opacity(0.08) : Color.white.opacity(0.03)))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(isChecked ? accent.opacity(0.4) : (hovering ? accent.opacity(0.2) : Color.clear), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
     }
 }
 
@@ -991,10 +1299,16 @@ private struct OptionRow: View {
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(accent)
                     .frame(width: 10)
-                // Number
-                Text("\(index).")
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(accent.opacity(hovering ? 1 : 0.6))
+                // Number (or ellipsis for "Other")
+                if index > 0 {
+                    Text("\(index).")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(accent.opacity(hovering ? 1 : 0.6))
+                } else {
+                    Text("…")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(accent.opacity(hovering ? 1 : 0.6))
+                }
                 // Label + Description
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
@@ -1241,6 +1555,7 @@ private struct SessionIdentityLine: View {
             ProjectNameLink(
                 name: session.projectDisplayName,
                 cwd: session.cwd,
+                isInteractive: !session.isRemote,
                 fontSize: projectFontSize,
                 color: projectColor
             )
@@ -1275,6 +1590,7 @@ private struct SessionIdentityLine: View {
 private struct ProjectNameLink: View {
     let name: String
     let cwd: String?
+    let isInteractive: Bool
     let fontSize: CGFloat
     let color: Color
 
@@ -1284,7 +1600,12 @@ private struct ProjectNameLink: View {
             .foregroundStyle(color)
             .lineLimit(1)
             .truncationMode(.tail)
-            .help(cwd ?? "")
+            .onTapGesture {
+                if isInteractive, let cwd = cwd {
+                    NSWorkspace.shared.open(URL(fileURLWithPath: cwd))
+                }
+            }
+            .help(isInteractive && cwd != nil ? "\(L10n.shared["open_path"]) \(cwd!)" : "")
     }
 }
 
@@ -1388,6 +1709,9 @@ private struct SessionCard: View {
                     Spacer(minLength: 8)
 
                     HStack(spacing: 4) {
+                        if let remote = session.remoteDisplayName {
+                            SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
+                        }
                         if session.interrupted {
                             SessionTag("INT", color: Color(red: 1.0, green: 0.6, blue: 0.2))
                         }
@@ -1714,17 +2038,40 @@ private struct TerminalBadge: View {
         return icon
     }
 
+    private let remoteColor = Color(red: 0.3, green: 0.75, blue: 0.5)
+
     var body: some View {
-        HStack(spacing: 3) {
-            if let icon = termIcon {
-                Image(nsImage: icon)
-                    .resizable()
-                    .frame(width: 13, height: 13)
-            }
-            if let term = session.terminalName {
-                Text(term)
-                    .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
+        Group {
+            if session.isRemote {
+                HStack(spacing: 4) {
+                    Image(systemName: "network")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(remoteColor)
+                    if let term = session.terminalName {
+                        Text(term)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(remoteColor)
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(remoteColor.opacity(0.08))
+                )
+            } else {
+                HStack(spacing: 3) {
+                    if let icon = termIcon {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .frame(width: 13, height: 13)
+                    }
+                    if let term = session.terminalName {
+                        Text(term)
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                }
             }
         }
     }

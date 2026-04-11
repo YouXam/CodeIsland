@@ -49,6 +49,13 @@ final class AppState {
         if case .completionCard = surface { return true }
         return false
     }
+    /// True when an interactive card (approval or question) is visible — completions must queue.
+    private var isShowingInteractive: Bool {
+        switch surface {
+        case .approvalCard, .questionCard: return true
+        default: return false
+        }
+    }
     private var modelReadRetryAt: [String: Date] = [:]
 
     var rotatingSessionId: String?
@@ -445,6 +452,7 @@ final class AppState {
     /// Start monitoring the CLI process for a session.
     /// Prefers the PID captured by the bridge (_ppid), falls back to source-aware process scans by CWD.
     private func tryMonitorSession(_ sessionId: String) {
+        guard sessions[sessionId]?.isRemote != true else { return }
         let currentMonitor = processMonitors[sessionId]?.process
 
         // Primary: use PID from bridge (works for any CLI)
@@ -526,7 +534,7 @@ final class AppState {
         // Don't queue duplicates
         if completionQueue.contains(sessionId) || justCompletedSessionId == sessionId { return }
 
-        if isShowingCompletion {
+        if isShowingCompletion || isShowingInteractive {
             // Already showing one — queue this for later
             completionQueue.append(sessionId)
         } else {
@@ -592,15 +600,8 @@ final class AppState {
     }
 
     private func showNextCompletionOrCollapse() {
-        while let next = completionQueue.first {
-            completionQueue.removeFirst()
-            if sessions[next] != nil {
-                withAnimation(NotchAnimation.pop) {
-                    showCompletion(next)
-                }
-                return
-            }
-        }
+        // showNextPending handles: interactive items first, then completionQueue, then collapse
+        if showNextPending() { return }
         withAnimation(NotchAnimation.close) {
             surface = .collapsed
         }
@@ -646,6 +647,7 @@ final class AppState {
 
     private func refreshProviderTitle(for trackedSessionId: String, providerSessionId: String? = nil) {
         guard let session = sessions[trackedSessionId] else { return }
+        guard !session.isRemote else { return }
 
         let lookupSessionId = providerSessionId ?? session.providerSessionId ?? trackedSessionId
         if let providerSessionId {
@@ -692,7 +694,9 @@ final class AppState {
 
         // Backfill model after metadata extraction. Hooks are inconsistent across providers,
         // so retry with a cooldown instead of giving up permanently on the first miss.
-        maybeBackfillModel(for: sessionId)
+        if sessions[sessionId]?.isRemote != true {
+            maybeBackfillModel(for: sessionId)
+        }
 
         // If session was waiting but received an activity event, the question/permission
         // was answered externally (e.g. user replied in terminal). Clear pending items.
@@ -724,6 +728,7 @@ final class AppState {
         }
 
         if let provider = sessions[sessionId]?.source,
+           sessions[sessionId]?.isRemote != true,
            SessionTitleStore.supports(provider: provider) {
             refreshProviderTitle(for: sessionId)
         }
@@ -739,6 +744,16 @@ final class AppState {
 
         scheduleSave()
         startRotationIfNeeded()
+        refreshDerivedState()
+    }
+
+    func removeRemoteSessions(hostId: String) {
+        let ids = sessions.compactMap { key, session in
+            session.remoteHostId == hostId ? key : nil
+        }
+        for id in ids {
+            removeSession(id)
+        }
         refreshDerivedState()
     }
 
@@ -892,19 +907,43 @@ final class AppState {
         extractMetadata(into: &sessions, sessionId: sessionId, event: event)
         tryMonitorSession(sessionId)
 
-        let payload: QuestionPayload
-        if let questions = event.toolInput?["questions"] as? [[String: Any]],
-           let first = questions.first {
-            let questionText = first["question"] as? String ?? "Question"
-            let header = first["header"] as? String
-            var optionLabels: [String]?
-            var optionDescs: [String]?
-            if let opts = first["options"] as? [[String: Any]] {
-                optionLabels = opts.compactMap { $0["label"] as? String }
-                optionDescs = opts.compactMap { $0["description"] as? String }
+        var askItems: [AskUserQuestionItem] = []
+        if let questions = event.toolInput?["questions"] as? [[String: Any]] {
+            var usedAnswerKeys = Set<String>()
+            askItems = questions.enumerated().compactMap { index, item in
+                let questionText = item["question"] as? String ?? "Question"
+                let header = item["header"] as? String
+                let multiSelect = item["multiSelect"] as? Bool ?? false
+                var optionLabels: [String]?
+                var optionDescs: [String]?
+                if let opts = item["options"] as? [[String: Any]] {
+                    optionLabels = opts.compactMap { $0["label"] as? String }
+                    optionDescs = opts.compactMap { $0["description"] as? String }
+                }
+                if optionLabels?.isEmpty == true { optionLabels = nil }
+                if optionDescs?.isEmpty == true { optionDescs = nil }
+                let payload = QuestionPayload(
+                    question: questionText,
+                    options: optionLabels,
+                    descriptions: optionDescs,
+                    header: header
+                )
+                let trimmedHeader = header?.trimmingCharacters(in: .whitespacesAndNewlines)
+                let baseKey = (trimmedHeader?.isEmpty == false ? trimmedHeader : nil) ?? "answer_\(index + 1)"
+                var answerKey = baseKey
+                if usedAnswerKeys.contains(answerKey) {
+                    var suffix = 2
+                    while usedAnswerKeys.contains("\(baseKey)_\(suffix)") {
+                        suffix += 1
+                    }
+                    answerKey = "\(baseKey)_\(suffix)"
+                }
+                usedAnswerKeys.insert(answerKey)
+                return AskUserQuestionItem(payload: payload, answerKey: answerKey, multiSelect: multiSelect)
             }
-            payload = QuestionPayload(question: questionText, options: optionLabels, descriptions: optionDescs, header: header)
-        } else {
+        }
+
+        if askItems.isEmpty {
             let questionText = event.toolInput?["question"] as? String ?? "Question"
             var options: [String]?
             if let stringOpts = event.toolInput?["options"] as? [String] {
@@ -912,7 +951,27 @@ final class AppState {
             } else if let dictOpts = event.toolInput?["options"] as? [[String: Any]] {
                 options = dictOpts.compactMap { $0["label"] as? String }
             }
-            payload = QuestionPayload(question: questionText, options: options)
+            if !questionText.isEmpty {
+                let payload = QuestionPayload(question: questionText, options: options)
+                askItems = [AskUserQuestionItem(payload: payload, answerKey: "answer", multiSelect: false)]
+            }
+        }
+
+        guard !askItems.isEmpty else {
+            let obj: [String: Any] = [
+                "hookSpecificOutput": [
+                    "hookEventName": "PermissionRequest",
+                    "decision": [
+                        "behavior": "allow",
+                        "updatedInput": ["answers": [:] as [String: String]]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+            let responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+            continuation.resume(returning: responseData)
+            sessions[sessionId]?.status = .processing
+            refreshDerivedState()
+            return
         }
 
         drainPermissions(forSession: sessionId)
@@ -921,7 +980,14 @@ final class AppState {
         sessions[sessionId]?.status = .waitingQuestion
         sessions[sessionId]?.lastActivity = Date()
 
-        let request = QuestionRequest(event: event, question: payload, continuation: continuation, isFromPermission: true)
+        let askState = AskUserQuestionState(items: askItems, answers: [:])
+        let request = QuestionRequest(
+            event: event,
+            question: askItems[0].payload,
+            continuation: continuation,
+            isFromPermission: true,
+            askUserQuestionState: askState
+        )
         questionQueue.append(request)
 
         if questionQueue.count == 1 {
@@ -936,6 +1002,10 @@ final class AppState {
 
     func answerQuestion(_ answer: String) {
         guard !questionQueue.isEmpty else { return }
+        // AskUserQuestion uses batch wizard — direct single answers are not processed
+        if questionQueue[0].isFromPermission, questionQueue[0].askUserQuestionState != nil {
+            return
+        }
         let pending = questionQueue.removeFirst()
         let responseData: Data
         if pending.isFromPermission {
@@ -957,6 +1027,52 @@ final class AppState {
                 "hookSpecificOutput": [
                     "hookEventName": "Notification",
                     "answer": answer
+                ] as [String: Any]
+            ]
+            responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+        }
+        pending.continuation.resume(returning: responseData)
+        let sessionId = pending.event.sessionId ?? "default"
+        sessions[sessionId]?.status = .processing
+
+        showNextPending()
+        refreshDerivedState()
+    }
+
+    func answerQuestionMulti(_ answers: [(question: String, answer: String)]) {
+        guard !questionQueue.isEmpty else { return }
+        let pending = questionQueue.removeFirst()
+        let responseData: Data
+        if pending.isFromPermission {
+            var answersDict: [String: String] = [:]
+            if let askState = pending.askUserQuestionState {
+                // Match by position — wizard collects answers in the same order as items
+                for (index, item) in askState.items.enumerated() {
+                    if index < answers.count {
+                        answersDict[item.answerKey] = answers[index].answer
+                    }
+                }
+            } else {
+                let answerKey = pending.question.header ?? "answer"
+                answersDict[answerKey] = answers.first?.answer ?? ""
+            }
+            let obj: [String: Any] = [
+                "hookSpecificOutput": [
+                    "hookEventName": "PermissionRequest",
+                    "decision": [
+                        "behavior": "allow",
+                        "updatedInput": [
+                            "answers": answersDict
+                        ]
+                    ] as [String: Any]
+                ] as [String: Any]
+            ]
+            responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
+        } else {
+            let obj: [String: Any] = [
+                "hookSpecificOutput": [
+                    "hookEventName": "Notification",
+                    "answer": answers.first?.answer ?? ""
                 ] as [String: Any]
             ]
             responseData = (try? JSONSerialization.data(withJSONObject: obj)) ?? Data("{}".utf8)
@@ -1014,11 +1130,18 @@ final class AppState {
         refreshDerivedState()
     }
 
-    /// Drain all queued questions for a specific session, resuming their continuations with empty
+    /// Drain all queued questions for a specific session.
+    /// AskUserQuestion-derived requests are denied; notification questions return empty.
     private func drainQuestions(forSession sessionId: String) {
         questionQueue.removeAll { item in
             guard item.event.sessionId == sessionId else { return false }
-            item.continuation.resume(returning: Data("{}".utf8))
+            if item.isFromPermission {
+                let denyData = Data(
+                    #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#.utf8)
+                item.continuation.resume(returning: denyData)
+            } else {
+                item.continuation.resume(returning: Data("{}".utf8))
+            }
             return true
         }
     }
@@ -1036,6 +1159,15 @@ final class AppState {
             activeSessionId = sid
             surface = .questionCard(sessionId: sid)
             return true
+        } else if !completionQueue.isEmpty {
+            while let next = completionQueue.first {
+                completionQueue.removeFirst()
+                if sessions[next] != nil {
+                    withAnimation(NotchAnimation.pop) { doShowCompletion(next) }
+                    return true
+                }
+            }
+            return false
         } else if case .approvalCard = surface {
             surface = .collapsed
         } else if case .questionCard = surface {
