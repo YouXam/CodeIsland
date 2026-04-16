@@ -110,6 +110,7 @@ private struct RemoteHostsPage: View {
     @State private var user = ""
     @State private var port = ""
     @State private var identityFile = ""
+    @State private var authSocket = ""
     @State private var autoConnect = false
 
     var body: some View {
@@ -131,6 +132,8 @@ private struct RemoteHostsPage: View {
                 TextField(l10n["remote_user"], text: $user)
                 TextField(l10n["remote_port"], text: $port)
                 TextField(l10n["remote_identity"], text: $identityFile)
+                TextField(l10n["remote_auth_socket"], text: $authSocket,
+                          prompt: Text(l10n["remote_auth_socket_placeholder"]))
                 Toggle(l10n["remote_auto_connect"], isOn: $autoConnect)
 
                 Button(l10n["remote_add_button"]) {
@@ -144,7 +147,8 @@ private struct RemoteHostsPage: View {
                         user: user.trimmingCharacters(in: .whitespacesAndNewlines),
                         port: Int(port.trimmingCharacters(in: .whitespacesAndNewlines)),
                         identityFile: identityFile.trimmingCharacters(in: .whitespacesAndNewlines),
-                        autoConnect: autoConnect
+                        autoConnect: autoConnect,
+                        authSocket: authSocket.trimmingCharacters(in: .whitespacesAndNewlines)
                     ))
 
                     name = ""
@@ -152,6 +156,7 @@ private struct RemoteHostsPage: View {
                     user = ""
                     port = ""
                     identityFile = ""
+                    authSocket = ""
                     autoConnect = false
                 }
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

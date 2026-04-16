@@ -40,6 +40,7 @@ final class SSHForwarder {
         process.arguments = buildArguments(host: host, localSocketPath: localSocketPath)
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = FileHandle.nullDevice
+        process.environment = buildEnvironment(host: host)
 
         let stderr = Pipe()
         process.standardError = stderr
@@ -122,6 +123,20 @@ final class SSHForwarder {
         args += ["-R", "\(host.remoteSocketPath):\(localSocketPath)"]
         args.append(host.sshTarget)
         return args
+    }
+
+    /// Merge the host-specific SSH_AUTH_SOCK (if any) into the spawn environment so
+    /// agents fronted by a password manager (1Password, Bitwarden, etc.) can sign
+    /// the handshake even when the GUI app didn't inherit the env var from a shell.
+    /// See issue #81.
+    private func buildEnvironment(host: RemoteHost) -> [String: String] {
+        var env = ProcessInfo.processInfo.environment
+        let trimmed = host.authSocket.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            let expanded = (trimmed as NSString).expandingTildeInPath
+            env["SSH_AUTH_SOCK"] = expanded
+        }
+        return env
     }
 
     private func startStderrMonitor(_ pipe: Pipe, generation: UInt64) {

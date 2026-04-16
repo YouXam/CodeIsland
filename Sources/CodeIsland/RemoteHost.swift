@@ -8,6 +8,10 @@ struct RemoteHost: Identifiable, Codable, Equatable, Sendable {
     var port: Int?
     var identityFile: String
     var autoConnect: Bool
+    /// Optional SSH_AUTH_SOCK path — lets password-manager-backed SSH agents
+    /// (1Password, Bitwarden, etc.) sign the handshake when the GUI launch
+    /// didn't inherit the env var from a shell. See issue #81.
+    var authSocket: String
 
     init(
         id: String = UUID().uuidString,
@@ -16,7 +20,8 @@ struct RemoteHost: Identifiable, Codable, Equatable, Sendable {
         user: String = "",
         port: Int? = nil,
         identityFile: String = "",
-        autoConnect: Bool = false
+        autoConnect: Bool = false,
+        authSocket: String = ""
     ) {
         self.id = id
         self.name = name
@@ -25,6 +30,20 @@ struct RemoteHost: Identifiable, Codable, Equatable, Sendable {
         self.port = port
         self.identityFile = identityFile
         self.autoConnect = autoConnect
+        self.authSocket = authSocket
+    }
+
+    // Backward compatibility: hosts persisted before authSocket existed decode with ""
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.host = try c.decode(String.self, forKey: .host)
+        self.user = try c.decode(String.self, forKey: .user)
+        self.port = try c.decodeIfPresent(Int.self, forKey: .port)
+        self.identityFile = try c.decode(String.self, forKey: .identityFile)
+        self.autoConnect = try c.decode(Bool.self, forKey: .autoConnect)
+        self.authSocket = try c.decodeIfPresent(String.self, forKey: .authSocket) ?? ""
     }
 
     var sshTarget: String {
