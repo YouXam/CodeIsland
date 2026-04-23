@@ -948,8 +948,9 @@ struct ConfigInstaller {
         var seeded = originalText
         if cli.format == .copilot, (originalText == nil || originalText?.isEmpty == true) {
             seeded = "{\n  \"version\": 1\n}\n"
-        } else if cli.format == .copilot {
-            // Ensure "version" exists for existing files without losing other user fields.
+        } else if cli.format == .copilot, root["version"] == nil {
+            // Only insert `version` when the user hasn't set one themselves — don't clobber a
+            // user-bumped schema version in case Copilot ships v2+ in the future.
             if let t = originalText, let withVer = JSONMinimalEditor.setTopLevelValue(in: t, key: "version", value: 1) {
                 seeded = withVer
             }
