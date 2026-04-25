@@ -389,6 +389,26 @@ struct TerminalActivator {
             end if
             activate
         end tell
+
+        -- Final fallback via System Events: Ghostty's own `focus`/`activate` is unreliable
+        -- in some versions (issue #84), and even when it brings the app to front it doesn't
+        -- deminiaturize a window that's currently minimized to the dock. System Events
+        -- Accessibility API forces both. Wrapped in `try` so it silently no-ops if the
+        -- user hasn't granted Accessibility permission.
+        try
+            tell application "System Events"
+                tell process "Ghostty"
+                    set frontmost to true
+                    repeat with w in windows
+                        try
+                            if value of attribute "AXMinimized" of w is true then
+                                set value of attribute "AXMinimized" of w to false
+                            end if
+                        end try
+                    end repeat
+                end tell
+            end tell
+        end try
         """
         // Use /usr/bin/osascript to run AppleScript out-of-process (tmuxcc uses the same approach).
         // This avoids relying on NSAppleScript execution inside the app process.
@@ -510,18 +530,24 @@ struct TerminalActivator {
         // Terminal.app auto-generates `name of t` containing the running command + cwd; `custom title`
         // only exists when the user set it explicitly, so matching against `name` works for the
         // overwhelming default case.
+        // Note: locals named `targetTty` / `targetDir` (NOT `tty` / `dir`). AppleScript's
+        // resolver can't reliably tell `if tty of t is tty` apart from `if tty of t is
+        // tty of <implicit object>` — `tty` is also a tab property name, so reusing it as
+        // a local variable causes Strategy 1 to silently misfire and Strategy 2 to
+        // fall through, which manifested as "click any session, jumps to the same tab"
+        // (issue #124).
         let script = """
         tell application "Terminal"
-            set tty to "\(ttyEscaped)"
-            set dir to "\(dirEscaped)"
+            set targetTty to "\(ttyEscaped)"
+            set targetDir to "\(dirEscaped)"
             set found to false
 
             -- Strategy 1: precise tty match
-            if tty is not "" then
+            if targetTty is not "" then
                 repeat with w in windows
                     repeat with t in tabs of w
                         try
-                            if tty of t is tty then
+                            if tty of t is targetTty then
                                 if miniaturized of w then set miniaturized of w to false
                                 set selected tab of w to t
                                 set index of w to 1
@@ -535,11 +561,11 @@ struct TerminalActivator {
             end if
 
             -- Strategy 2: auto tab title contains the cwd folder name
-            if not found and dir is not "" then
+            if not found and targetDir is not "" then
                 repeat with w in windows
                     repeat with t in tabs of w
                         try
-                            if (name of t as text) contains dir then
+                            if (name of t as text) contains targetDir then
                                 if miniaturized of w then set miniaturized of w to false
                                 set selected tab of w to t
                                 set index of w to 1
@@ -553,11 +579,11 @@ struct TerminalActivator {
             end if
 
             -- Strategy 3: user-set custom title
-            if not found and dir is not "" then
+            if not found and targetDir is not "" then
                 repeat with w in windows
                     repeat with t in tabs of w
                         try
-                            if custom title of t contains dir then
+                            if custom title of t contains targetDir then
                                 if miniaturized of w then set miniaturized of w to false
                                 set selected tab of w to t
                                 set index of w to 1
@@ -585,6 +611,24 @@ struct TerminalActivator {
 
             activate
         end tell
+
+        -- Final fallback via System Events: when Terminal.app's `windows` collection doesn't
+        -- include a minimized window (some macOS 14 cases), or when osascript silently no-ops,
+        -- force both frontmost and AXMinimized=false through Accessibility (issue #124).
+        try
+            tell application "System Events"
+                tell process "Terminal"
+                    set frontmost to true
+                    repeat with w in windows
+                        try
+                            if value of attribute "AXMinimized" of w is true then
+                                set value of attribute "AXMinimized" of w to false
+                            end if
+                        end try
+                    end repeat
+                end tell
+            end tell
+        end try
         """
         runAppleScript(script)
     }
