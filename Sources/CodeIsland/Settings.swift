@@ -84,6 +84,14 @@ enum SettingsKey {
     // Default mascot source when no sessions exist (falls back to this instead of always "claude")
     static let defaultSource = "defaultSource"
 
+    // Buddy companion device
+    static let esp32BridgeEnabled = "esp32BridgeEnabled"
+    static let esp32HeartbeatSeconds = "esp32HeartbeatSeconds"
+    static let buddyScreenBrightnessPercent = "buddyScreenBrightnessPercent"
+    static let buddyScreenOrientation = "buddyScreenOrientation"
+    static let selectedBuddyIdentifier = "selectedBuddyIdentifier"
+    static let selectedBuddyName = "selectedBuddyName"
+
     // Auto-approve tools (comma-separated tool names)
     static let autoApproveTools = "autoApproveTools"
 }
@@ -132,6 +140,13 @@ struct SettingsDefaults {
 
     static let defaultSource = "claude"
 
+    static let esp32BridgeEnabled = false
+    static let esp32HeartbeatSeconds = 5.0
+    static let buddyScreenBrightnessPercent = 70.0
+    static let buddyScreenOrientation = "up"
+    static let selectedBuddyIdentifier = ""
+    static let selectedBuddyName = ""
+
     static let autoApproveTools = "TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput,TaskStop,TodoRead,TodoWrite,EnterPlanMode"
 }
 
@@ -175,6 +190,12 @@ class SettingsManager {
             SettingsKey.sessionGroupingMode: SettingsDefaults.sessionGroupingMode,
             SettingsKey.showToolStatus: SettingsDefaults.showToolStatus,
             SettingsKey.collapsedWidthScale: SettingsDefaults.collapsedWidthScale,
+            SettingsKey.esp32BridgeEnabled: SettingsDefaults.esp32BridgeEnabled,
+            SettingsKey.esp32HeartbeatSeconds: SettingsDefaults.esp32HeartbeatSeconds,
+            SettingsKey.buddyScreenBrightnessPercent: SettingsDefaults.buddyScreenBrightnessPercent,
+            SettingsKey.buddyScreenOrientation: SettingsDefaults.buddyScreenOrientation,
+            SettingsKey.selectedBuddyIdentifier: SettingsDefaults.selectedBuddyIdentifier,
+            SettingsKey.selectedBuddyName: SettingsDefaults.selectedBuddyName,
             SettingsKey.defaultSource: SettingsDefaults.defaultSource,
             SettingsKey.autoApproveTools: SettingsDefaults.autoApproveTools,
         ])

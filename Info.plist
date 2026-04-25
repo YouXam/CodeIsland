@@ -37,5 +37,7 @@
 	<string>oqLtx5s2hc8Xgsp4rEuTwnQ8UGRT4ma4tjlf+1i3YHA=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>14400</integer>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>CodeIsland uses Bluetooth to mirror the island onto Buddy.</string>
 </dict>
 </plist>

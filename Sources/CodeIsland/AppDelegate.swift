@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import os.log
+import CodeIslandCore
 
 @MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
@@ -42,6 +43,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.startSessionDiscovery()
         appState.startCodexAppServerWatcher()
         RemoteManager.shared.startup()
+
+        // Buddy bridge (opt-in): mirrors the Dynamic Island onto the companion
+        // device and routes its button press back to TerminalActivator.
+        ESP32StatePublisher.shared.attach(appState)
+        ESP32BridgeManager.shared.onFocusRequest = { [weak appState] mascot in
+            guard let appState else { return }
+            ESP32FocusCoordinator.handle(mascot: mascot, appState: appState)
+        }
+        let buddyEnabled = UserDefaults.standard.bool(forKey: SettingsKey.esp32BridgeEnabled)
+        let buddySyncInterval = UserDefaults.standard.double(forKey: SettingsKey.esp32HeartbeatSeconds)
+        let buddyBrightness = UserDefaults.standard.double(forKey: SettingsKey.buddyScreenBrightnessPercent)
+        let buddyScreenOrientation = BuddyScreenOrientation(
+            settingsValue: UserDefaults.standard.string(forKey: SettingsKey.buddyScreenOrientation)
+        )
+        ESP32StatePublisher.shared.configure(
+            enabled: buddyEnabled,
+            heartbeatSeconds: buddySyncInterval > 0 ? buddySyncInterval : SettingsDefaults.esp32HeartbeatSeconds,
+            brightnessPercent: buddyBrightness > 0 ? buddyBrightness : SettingsDefaults.buddyScreenBrightnessPercent,
+            screenOrientation: buddyScreenOrientation
+        )
 
         // Hooks auto-recovery: periodic + app activation trigger
         hookRecoveryTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in

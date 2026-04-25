@@ -557,6 +557,7 @@ final class AppState {
         } else {
             rotatingSessionId = cachedActiveIds.first
         }
+        ESP32StatePublisher.shared.notifyDirty()
     }
 
     /// Start monitoring the CLI process for a session.
@@ -795,6 +796,7 @@ final class AppState {
         if primarySource != effectiveSource { primarySource = effectiveSource }
         if activeSessionCount != summary.activeSessionCount { activeSessionCount = summary.activeSessionCount }
         if totalSessionCount != summary.totalSessionCount { totalSessionCount = summary.totalSessionCount }
+        ESP32StatePublisher.shared.notifyDirty()
     }
 
     private func refreshProviderTitle(for trackedSessionId: String, providerSessionId: String? = nil) {

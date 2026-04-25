@@ -13,6 +13,7 @@ enum SettingsPage: String, Identifiable, Hashable {
     case shortcuts
     case remote
     case hooks
+    case buddy
     case about
 
     var id: String { rawValue }
@@ -27,6 +28,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .shortcuts: return "command.circle.fill"
         case .remote: return "network"
         case .hooks: return "link.circle.fill"
+        case .buddy: return "dot.radiowaves.left.and.right"
         case .about: return "info.circle.fill"
         }
     }
@@ -41,6 +43,7 @@ enum SettingsPage: String, Identifiable, Hashable {
         case .shortcuts: return .indigo
         case .remote: return .mint
         case .hooks: return .purple
+        case .buddy: return .red
         case .about: return .cyan
         }
     }
@@ -53,7 +56,7 @@ private struct SidebarGroup: Hashable {
 
 private let sidebarGroups: [SidebarGroup] = [
     SidebarGroup(title: nil, pages: [.general, .behavior, .appearance, .mascots, .sound, .shortcuts]),
-    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .about]),
+    SidebarGroup(title: "CodeIsland", pages: [.remote, .hooks, .buddy, .about]),
 ]
 
 // MARK: - Main View
@@ -91,6 +94,7 @@ struct SettingsView: View {
                 case .shortcuts: ShortcutsPage()
                 case .remote: RemoteHostsPage()
                 case .hooks: HooksPage()
+                case .buddy: BuddyPage()
                 case .about: AboutPage()
                 }
             }
@@ -1157,6 +1161,255 @@ private struct SoundEventRow: View {
     private func clearCustomSound() {
         customPath = ""
         UserDefaults.standard.removeObject(forKey: SettingsKey.soundCustomPath(soundName))
+    }
+}
+
+// MARK: - Buddy Page
+
+private struct BuddyPage: View {
+    @ObservedObject private var l10n = L10n.shared
+    @AppStorage(SettingsKey.esp32BridgeEnabled) private var enabled: Bool = SettingsDefaults.esp32BridgeEnabled
+    @AppStorage(SettingsKey.esp32HeartbeatSeconds) private var heartbeat: Double = SettingsDefaults.esp32HeartbeatSeconds
+    @AppStorage(SettingsKey.buddyScreenBrightnessPercent) private var brightness: Double = SettingsDefaults.buddyScreenBrightnessPercent
+    @AppStorage(SettingsKey.buddyScreenOrientation) private var screenOrientation: String = SettingsDefaults.buddyScreenOrientation
+    @State private var refreshTick = 0
+
+    private var bridge: ESP32BridgeManager { ESP32BridgeManager.shared }
+
+    private var localizedPowerError: String {
+        switch bridge.lastError {
+        case "Bluetooth permission denied":
+            return l10n["buddy_status_bluetooth_denied"]
+        case "Bluetooth unsupported on this Mac":
+            return l10n["buddy_status_bluetooth_unsupported"]
+        case "Bluetooth is resetting":
+            return l10n["buddy_status_bluetooth_resetting"]
+        default:
+            return l10n["buddy_status_bluetooth_off"]
+        }
+    }
+
+    private var statusText: String {
+        _ = refreshTick // force recompute
+        switch bridge.status {
+        case .off: return l10n["buddy_status_disabled"]
+        case .poweredOff: return localizedPowerError
+        case .noSelection: return l10n["buddy_status_no_selection"]
+        case .scanning: return l10n["buddy_status_scanning"]
+        case .searchingSelected: return l10n["buddy_status_searching_selected"]
+        case .connecting: return l10n["buddy_status_connecting"]
+        case .connected: return l10n["buddy_status_connected"]
+        case .reconnecting(let s): return String(format: l10n["buddy_status_reconnecting"], s)
+        }
+    }
+
+    private var statusColor: Color {
+        _ = refreshTick
+        switch bridge.status {
+        case .connected: return .green
+        case .scanning, .connecting, .searchingSelected: return .orange
+        case .reconnecting: return .yellow
+        case .off, .noSelection: return .secondary
+        case .poweredOff: return .red
+        }
+    }
+
+    private func configurePublisher() {
+        ESP32StatePublisher.shared.configure(
+            enabled: enabled,
+            heartbeatSeconds: heartbeat,
+            brightnessPercent: brightness,
+            screenOrientation: BuddyScreenOrientation(settingsValue: screenOrientation)
+        )
+    }
+
+    var body: some View {
+        Form {
+            Section(l10n["buddy"]) {
+                Toggle(l10n["buddy_enable_bluetooth"], isOn: $enabled)
+                    .onChange(of: enabled) { _, _ in
+                        configurePublisher()
+                    }
+
+                HStack {
+                    Text(l10n["buddy_connection_status"])
+                    Spacer()
+                    Circle()
+                        .fill(statusColor)
+                        .frame(width: 8, height: 8)
+                    Text(statusText)
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Button {
+                    bridge.stop()
+                    if enabled { bridge.start() }
+                } label: {
+                    Label(l10n["buddy_reconnect"], systemImage: "arrow.triangle.2.circlepath")
+                }
+                .disabled(!enabled || bridge.selectedBuddyIdentifier == nil)
+            }
+
+            Section(l10n["buddy_select_section"]) {
+                if let selectedId = bridge.selectedBuddyIdentifier {
+                    HStack {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(l10n["buddy_selected_label"])
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(bridge.connectedPeripheralName ?? bridge.selectedBuddyName ?? selectedId.uuidString)
+                                .font(.body)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button(role: .destructive) {
+                            bridge.forgetSelection()
+                        } label: {
+                            Text(l10n["buddy_forget"])
+                        }
+                    }
+                }
+
+                ForEach(bridge.discovered) { device in
+                    Button {
+                        bridge.select(buddyId: device.id)
+                    } label: {
+                        HStack {
+                            Image(systemName: device.id == bridge.selectedBuddyIdentifier
+                                  ? "largecircle.fill.circle"
+                                  : "circle")
+                                .foregroundStyle(device.id == bridge.selectedBuddyIdentifier ? Color.accentColor : .secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(device.name)
+                                    .font(.body)
+                                Text("\(l10n["buddy_signal"]) \(device.rssi) dBm")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .monospacedDigit()
+                            }
+                            Spacer()
+                            Image(systemName: rssiIconName(device.rssi))
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if bridge.discovered.isEmpty {
+                    Text(l10n["buddy_no_devices"])
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack {
+                    Button {
+                        // Restart discovery to force a fresh round of advertising packets.
+                        bridge.stopDiscovery()
+                        bridge.startDiscovery()
+                    } label: {
+                        Label(l10n["buddy_refresh"], systemImage: "arrow.clockwise")
+                    }
+                    .disabled(!enabled)
+                    Spacer()
+                    if bridge.status == .scanning {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small)
+                            Text(l10n["buddy_scanning"])
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Section(l10n["buddy_sync"]) {
+                HStack {
+                    Text(l10n["buddy_sync_interval"])
+                    Spacer()
+                    Text(String(format: l10n["buddy_seconds_format"], heartbeat))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(value: $heartbeat, in: 1...30, step: 1)
+                    .onChange(of: heartbeat) { _, _ in
+                        configurePublisher()
+                    }
+                Text(l10n["buddy_sync_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section(l10n["buddy_display"]) {
+                HStack {
+                    Text(l10n["buddy_brightness"])
+                    Spacer()
+                    Text("\(Int(brightness.rounded()))%")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                Slider(value: $brightness, in: Double(ESP32Protocol.minBrightnessPercent)...Double(ESP32Protocol.maxBrightnessPercent), step: 1)
+                    .onChange(of: brightness) { _, newValue in
+                        brightness = Double(ESP32Protocol.clampedBrightnessPercent(newValue))
+                        configurePublisher()
+                    }
+                Text(l10n["buddy_brightness_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Picker(l10n["buddy_screen_orientation"], selection: $screenOrientation) {
+                    Text(l10n["buddy_screen_orientation_up"]).tag(BuddyScreenOrientation.up.rawValue)
+                    Text(l10n["buddy_screen_orientation_down"]).tag(BuddyScreenOrientation.down.rawValue)
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: screenOrientation) { _, _ in
+                    configurePublisher()
+                }
+                Text(l10n["buddy_screen_orientation_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Text(l10n["buddy_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            refreshTick &+= 1
+        }
+        .onAppear {
+            if enabled {
+                bridge.startDiscovery()
+            }
+        }
+        .onDisappear {
+            bridge.stopDiscovery()
+        }
+        .onChange(of: enabled) { _, newValue in
+            if newValue {
+                bridge.startDiscovery()
+            } else {
+                bridge.stopDiscovery()
+            }
+        }
+    }
+
+    private func rssiIconName(_ rssi: Int) -> String {
+        // CoreBluetooth RSSI typically ranges from ~-30 (close) to -100 (far).
+        switch rssi {
+        case ..<(-85): return "wifi.exclamationmark"
+        case ..<(-70): return "wifi"
+        default:       return "wifi"
+        }
     }
 }
 
