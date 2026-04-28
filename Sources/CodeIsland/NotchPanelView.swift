@@ -1969,9 +1969,6 @@ private struct SessionCard: View {
                     Spacer(minLength: 8)
 
                     HStack(spacing: 4) {
-                        if let remote = session.remoteDisplayName {
-                            SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
-                        }
                         if session.interrupted {
                             SessionTag("INT", color: Color(red: 1.0, green: 0.6, blue: 0.2))
                         }
@@ -1979,7 +1976,12 @@ private struct SessionCard: View {
                             SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
                         }
                         SessionTag(timeAgo(session.startTime))
-                        TerminalBadge(session: session)
+                        if let remote = session.remoteDisplayName {
+                            SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
+                        }
+                        if !session.isRemote {
+                            TerminalBadge(session: session)
+                        }
                     }
                 }
 
