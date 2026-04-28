@@ -537,6 +537,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
+    @AppStorage(SettingsKey.hoverExpandDelay) private var hoverExpandDelay = SettingsDefaults.hoverExpandDelay
     @AppStorage(SettingsKey.sessionTimeout) private var sessionTimeout = SettingsDefaults.sessionTimeout
     @AppStorage(SettingsKey.rotationInterval) private var rotationInterval = SettingsDefaults.rotationInterval
     @AppStorage(SettingsKey.maxToolHistory) private var maxToolHistory = SettingsDefaults.maxToolHistory
@@ -606,6 +607,20 @@ private struct BehaviorPage: View {
                     }
                     .pickerStyle(.segmented)
                     .padding(.leading, 84)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(l10n["hover_expand_delay"])
+                            .font(.system(size: 12))
+                        Spacer()
+                        Text(String(format: "%.2fs", hoverExpandDelay))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: $hoverExpandDelay, in: 0.0...1.0, step: 0.05)
+                    Text(l10n["hover_expand_delay_desc"])
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 

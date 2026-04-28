@@ -33,6 +33,7 @@ enum SettingsKey {
     static let smartSuppress = "smartSuppress"
     static let collapseOnMouseLeave = "collapseOnMouseLeave"
     static let autoCollapseAfterSessionJump = "autoCollapseAfterSessionJump"
+    static let hoverExpandDelay = "hoverExpandDelay"     // seconds (0.0–1.0, default 0.5)
     static let hapticOnHover = "hapticOnHover"
     static let hapticIntensity = "hapticIntensity"      // 1=light, 2=medium, 3=strong
     static let sessionTimeout = "sessionTimeout"
@@ -120,6 +121,7 @@ struct SettingsDefaults {
     static let smartSuppress = true
     static let collapseOnMouseLeave = true
     static let autoCollapseAfterSessionJump = false
+    static let hoverExpandDelay = 0.5       // seconds
     static let hapticOnHover = false
     static let hapticIntensity = 1          // 1=light
     static let sessionTimeout = 30
@@ -192,6 +194,7 @@ class SettingsManager {
             SettingsKey.smartSuppress: SettingsDefaults.smartSuppress,
             SettingsKey.collapseOnMouseLeave: SettingsDefaults.collapseOnMouseLeave,
             SettingsKey.autoCollapseAfterSessionJump: SettingsDefaults.autoCollapseAfterSessionJump,
+            SettingsKey.hoverExpandDelay: SettingsDefaults.hoverExpandDelay,
             SettingsKey.hapticOnHover: SettingsDefaults.hapticOnHover,
             SettingsKey.hapticIntensity: SettingsDefaults.hapticIntensity,
             SettingsKey.sessionTimeout: SettingsDefaults.sessionTimeout,
