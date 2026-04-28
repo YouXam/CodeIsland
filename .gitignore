@@ -24,3 +24,5 @@ dev.sh
 .claude/
 skills-lock.json
 CLAUDE.md
+
+node_modules/

@@ -237,6 +237,8 @@ final class RelayConnectionManager: NSObject, ObservableObject {
             lastMessage = "connected"
         case "event":
             handleRelayEvent(object)
+        case "request_resolved":
+            handleRelayRequestResolved(object)
         case "error":
             handleServerError(object)
         case "ack":
@@ -278,6 +280,9 @@ final class RelayConnectionManager: NSObject, ObservableObject {
             payload["_remote_host_name"] as? String
         )
 
+        if let requestId {
+            payload["_relay_request_id"] = requestId
+        }
         if let hostId {
             let relayHostId = Self.relayHostId(from: hostId)
             payload["_remote_host_id"] = payload["_remote_host_id"] as? String ?? relayHostId
@@ -370,6 +375,11 @@ final class RelayConnectionManager: NSObject, ObservableObject {
 
         appState?.handleEvent(event)
         sendResponse(requestId: requestId, payload: [:])
+    }
+
+    private func handleRelayRequestResolved(_ envelope: [String: Any]) {
+        guard let requestId = envelope["requestId"] as? String else { return }
+        appState?.handleRelayRequestResolved(requestId: requestId)
     }
 
     private func sendResponse(requestId: String, data: Data) {
