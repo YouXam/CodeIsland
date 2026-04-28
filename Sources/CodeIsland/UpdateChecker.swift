@@ -38,6 +38,12 @@ final class UpdateChecker: NSObject, ObservableObject {
         return path.contains("/Caskroom/") || path.contains("/homebrew/")
     }
 
+    var automaticUpdateChecksEnabled: Bool {
+        guard !isHomebrewInstall else { return false }
+        return UserDefaults.standard.object(forKey: SettingsKey.automaticUpdateChecks) as? Bool
+            ?? SettingsDefaults.automaticUpdateChecks
+    }
+
     // MARK: - Lifecycle
 
     /// Wire up Sparkle. Call once from `AppDelegate.applicationDidFinishLaunching`.
@@ -54,9 +60,19 @@ final class UpdateChecker: NSObject, ObservableObject {
             Self.log.info("Homebrew install detected — disabling Sparkle auto-checks")
             updater.automaticallyChecksForUpdates = false
         } else {
-            updater.automaticallyChecksForUpdates = true
+            updater.automaticallyChecksForUpdates = automaticUpdateChecksEnabled
         }
         controller.startUpdater()
+    }
+
+    func setAutomaticUpdateChecksEnabled(_ enabled: Bool) {
+        guard !isHomebrewInstall else {
+            UserDefaults.standard.set(false, forKey: SettingsKey.automaticUpdateChecks)
+            updater.automaticallyChecksForUpdates = false
+            return
+        }
+        UserDefaults.standard.set(enabled, forKey: SettingsKey.automaticUpdateChecks)
+        updater.automaticallyChecksForUpdates = enabled
     }
 
     // MARK: - Public API (mirrors the pre-Sparkle signature for call-site compat)

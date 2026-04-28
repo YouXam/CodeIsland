@@ -27,6 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // hooks get no response and Claude Code denies them.
         hookServer = HookServer(appState: appState)
         hookServer?.start()
+        RelayConnectionManager.shared.attach(appState: appState)
         RemoteManager.shared.onDisconnect = { [weak appState] hostId in
             appState?.removeRemoteSessions(hostId: hostId)
         }
@@ -48,6 +49,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.startSessionDiscovery()
         appState.startCodexAppServerWatcher()
         RemoteManager.shared.startup()
+        RelayConnectionManager.shared.startup()
 
         // Buddy bridge (opt-in): mirrors the Dynamic Island onto the companion
         // device and routes its button press back to TerminalActivator.
@@ -133,6 +135,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hookRecoveryTimer?.invalidate()
         teardownGlobalShortcut()
         appState.saveSessions()
+        RelayConnectionManager.shared.shutdown()
         RemoteManager.shared.shutdown()
         hookServer?.stop()
         appState.stopCodexAppServerWatcher()

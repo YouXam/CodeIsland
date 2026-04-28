@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import AppKit
 import CodeIslandCore
 
 // MARK: - Navigation Model
@@ -108,6 +109,11 @@ struct SettingsView: View {
 private struct RemoteHostsPage: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var remoteManager = RemoteManager.shared
+    @ObservedObject private var relayManager = RelayConnectionManager.shared
+
+    @AppStorage(SettingsKey.relayServerURL) private var relayServerURL: String = SettingsDefaults.relayServerURL
+    @AppStorage(SettingsKey.relayAPIKey) private var relayAPIKey: String = SettingsDefaults.relayAPIKey
+    @AppStorage(SettingsKey.relayAutoConnect) private var relayAutoConnect: Bool = SettingsDefaults.relayAutoConnect
 
     @State private var name = ""
     @State private var host = ""
@@ -119,6 +125,74 @@ private struct RemoteHostsPage: View {
 
     var body: some View {
         Form {
+            Section(l10n["relay_server"]) {
+                Text(l10n["relay_server_desc"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                RelaySettingsFieldRow(label: l10n["relay_server_url"]) {
+                    RelayTextInputField(text: $relayServerURL)
+                }
+
+                RelaySettingsFieldRow(label: l10n["relay_api_key"]) {
+                    RelayTextInputField(text: $relayAPIKey, isSecure: true)
+                }
+
+                HStack(spacing: 8) {
+                    Button(l10n["relay_copy_api_key"]) {
+                        copyToPasteboard(relayAPIKey)
+                    }
+                    .disabled(relayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                    Button(l10n["relay_copy_install_command"]) {
+                        copyToPasteboard(relayInstallCommand)
+                    }
+                    .disabled(relayInstallCommand.isEmpty)
+                }
+                .buttonStyle(.bordered)
+
+                Text(l10n["relay_remote_config_path"])
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle(l10n["relay_auto_connect"], isOn: $relayAutoConnect)
+
+                HStack {
+                    Text(l10n["buddy_connection_status"])
+                    Spacer()
+                    Text(relayStatusText)
+                        .foregroundStyle(relayStatusColor)
+                }
+
+                HStack(spacing: 8) {
+                    Button(l10n["relay_register"]) {
+                        Task {
+                            await relayManager.register(serverURL: relayServerURL)
+                        }
+                    }
+                    .disabled(relayServerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || relayManager.isRegistering)
+
+                    switch relayManager.status {
+                    case .connected, .connecting:
+                        Button(l10n["remote_disconnect"]) {
+                            relayManager.disconnect()
+                        }
+                    default:
+                        Button(l10n["remote_connect"]) {
+                            relayManager.connect()
+                        }
+                        .disabled(relayServerURL.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || relayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+
+                    if relayManager.isRegistering {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+
             Section(l10n["remote_hosts"]) {
                 if remoteManager.hosts.isEmpty {
                     Text(l10n["remote_hosts_empty"])
@@ -174,6 +248,124 @@ private struct RemoteHostsPage: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private var relayStatusText: String {
+        switch relayManager.status {
+        case .connected:
+            return l10n["remote_connected"]
+        case .connecting:
+            return l10n["remote_connecting"]
+        case .disconnected:
+            return l10n["remote_disconnected"]
+        case .failed(let message):
+            return message
+        }
+    }
+
+    private var relayStatusColor: Color {
+        switch relayManager.status {
+        case .connected:
+            return .green
+        case .connecting:
+            return .orange
+        case .disconnected:
+            return .secondary
+        case .failed:
+            return .red
+        }
+    }
+
+    private var relayInstallCommand: String {
+        let server = relayServerURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let apiKey = relayAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !server.isEmpty,
+              !apiKey.isEmpty,
+              let installURL = RelayConnectionManager.resourceURL(from: server, path: "/resources/install.sh") else {
+            return ""
+        }
+        return "curl -fsSL \(shellQuote(installURL.absoluteString)) | CODEISLAND_RELAY_SERVER=\(shellQuote(server)) CODEISLAND_RELAY_API_KEY=\(shellQuote(apiKey)) sh"
+    }
+
+    private func copyToPasteboard(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(trimmed, forType: .string)
+    }
+
+    private func shellQuote(_ value: String) -> String {
+        "'\(value.replacingOccurrences(of: "'", with: "'\\''"))'"
+    }
+}
+
+private struct RelaySettingsFieldRow<Field: View>: View {
+    let label: String
+    @ViewBuilder let field: () -> Field
+    private let labelWidth: CGFloat = 96
+    private let fieldHeight: CGFloat = 22
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label)
+                .frame(width: labelWidth, alignment: .leading)
+
+            field()
+                .frame(maxWidth: .infinity, minHeight: fieldHeight, maxHeight: fieldHeight, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct RelayTextInputField: NSViewRepresentable {
+    @Binding var text: String
+    var isSecure = false
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text)
+    }
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField: NSTextField = isSecure
+            ? NSSecureTextField(string: text)
+            : NSTextField(string: text)
+        textField.delegate = context.coordinator
+        textField.isEditable = true
+        textField.isSelectable = true
+        textField.isBezeled = true
+        textField.bezelStyle = .roundedBezel
+        textField.drawsBackground = true
+        textField.alignment = .left
+        textField.usesSingleLineMode = true
+        textField.lineBreakMode = .byTruncatingTail
+        textField.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        textField.cell?.alignment = .left
+        textField.cell?.wraps = false
+        textField.cell?.isScrollable = true
+        return textField
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        nsView.alignment = .left
+        nsView.cell?.alignment = .left
+    }
+
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        @Binding private var text: String
+
+        init(text: Binding<String>) {
+            _text = text
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let textField = notification.object as? NSTextField else { return }
+            text = textField.stringValue
+        }
     }
 }
 
@@ -1469,6 +1661,17 @@ private struct BuddyPage: View {
 private struct AboutPage: View {
     @ObservedObject private var l10n = L10n.shared
     @ObservedObject private var updater = UpdateChecker.shared
+    @AppStorage(SettingsKey.automaticUpdateChecks) private var automaticUpdateChecks = SettingsDefaults.automaticUpdateChecks
+
+    private var automaticUpdateChecksBinding: Binding<Bool> {
+        Binding(
+            get: { updater.isHomebrewInstall ? false : automaticUpdateChecks },
+            set: { newValue in
+                automaticUpdateChecks = newValue
+                updater.setAutomaticUpdateChecksEnabled(newValue)
+            }
+        )
+    }
 
     var body: some View {
         VStack {
@@ -1500,7 +1703,10 @@ private struct AboutPage: View {
                 }
 
                 // In-app update section
-                updateSection
+                VStack(spacing: 10) {
+                    automaticUpdateSection
+                    updateSection
+                }
 
                 Button {
                     DiagnosticsExporter.export()
@@ -1527,6 +1733,19 @@ private struct AboutPage: View {
             .frame(maxWidth: .infinity)
 
             Spacer()
+        }
+    }
+
+    private var automaticUpdateSection: some View {
+        VStack(spacing: 4) {
+            Toggle(l10n["automatic_update_checks"], isOn: automaticUpdateChecksBinding)
+                .toggleStyle(.switch)
+                .disabled(updater.isHomebrewInstall)
+            if updater.isHomebrewInstall {
+                Text(l10n["automatic_update_homebrew_disabled"])
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 

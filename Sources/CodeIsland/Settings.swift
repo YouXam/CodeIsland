@@ -25,6 +25,7 @@ enum SettingsKey {
     static let displayChoice = "displayChoice"             // "auto", "builtin", "main"
     static let allowHorizontalDrag = "allowHorizontalDrag"
     static let panelHorizontalOffset = "panelHorizontalOffset"
+    static let automaticUpdateChecks = "automaticUpdateChecks"
 
     // General - Behavior
     static let hideInFullscreen = "hideInFullscreen"
@@ -104,12 +105,18 @@ enum SettingsKey {
     static let webhookEnabled = "webhookEnabled"
     static let webhookURL = "webhookURL"
     static let webhookEventFilter = "webhookEventFilter"  // comma-separated allow-list; empty = forward all
+
+    // Relay server: WebSocket bridge for remote hosts that cannot use SSH forwarding
+    static let relayServerURL = "relayServerURL"
+    static let relayAPIKey = "relayAPIKey"
+    static let relayAutoConnect = "relayAutoConnect"
 }
 
 struct SettingsDefaults {
     static let displayChoice = "auto"
     static let allowHorizontalDrag = false
     static let panelHorizontalOffset = 0.0
+    static let automaticUpdateChecks = false
     static let hideInFullscreen = true
     static let hideWhenNoSession = false
     static let smartSuppress = true
@@ -170,6 +177,10 @@ struct SettingsDefaults {
     static let webhookEnabled = false
     static let webhookURL = ""
     static let webhookEventFilter = ""
+
+    static let relayServerURL = ""
+    static let relayAPIKey = ""
+    static let relayAutoConnect = false
 }
 
 @MainActor
@@ -183,6 +194,7 @@ class SettingsManager {
             SettingsKey.displayChoice: SettingsDefaults.displayChoice,
             SettingsKey.allowHorizontalDrag: SettingsDefaults.allowHorizontalDrag,
             SettingsKey.panelHorizontalOffset: SettingsDefaults.panelHorizontalOffset,
+            SettingsKey.automaticUpdateChecks: SettingsDefaults.automaticUpdateChecks,
             SettingsKey.hideInFullscreen: SettingsDefaults.hideInFullscreen,
             SettingsKey.hideWhenNoSession: SettingsDefaults.hideWhenNoSession,
             SettingsKey.smartSuppress: SettingsDefaults.smartSuppress,
@@ -226,6 +238,9 @@ class SettingsManager {
             SettingsKey.webhookEnabled: SettingsDefaults.webhookEnabled,
             SettingsKey.webhookURL: SettingsDefaults.webhookURL,
             SettingsKey.webhookEventFilter: SettingsDefaults.webhookEventFilter,
+            SettingsKey.relayServerURL: SettingsDefaults.relayServerURL,
+            SettingsKey.relayAPIKey: SettingsDefaults.relayAPIKey,
+            SettingsKey.relayAutoConnect: SettingsDefaults.relayAutoConnect,
         ])
     }
 

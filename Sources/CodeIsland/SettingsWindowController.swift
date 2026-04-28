@@ -27,17 +27,20 @@ class SettingsWindowController {
             return
         }
 
-        let settingsView = SettingsView()
-        let hostingView = NSHostingView(rootView: settingsView)
-
         let screen = NSScreen.main ?? NSScreen.screens.first
         let screenW = screen?.frame.width ?? 1440
         let screenH = screen?.frame.height ?? 900
         let winW = min(660, screenW * 0.5)
         let winH = min(540, screenH * 0.6)
+        let contentSize = NSSize(width: winW, height: winH)
+
+        let settingsView = SettingsView()
+            .frame(width: contentSize.width, height: contentSize.height)
+        let hostingView = NSHostingView(rootView: settingsView)
+        hostingView.frame = NSRect(origin: .zero, size: contentSize)
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: winW, height: winH),
+            contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -46,7 +49,9 @@ class SettingsWindowController {
         window.title = L10n.shared["settings_title"]
         window.backgroundColor = .windowBackgroundColor
         window.contentView = hostingView
-        window.contentMinSize = NSSize(width: min(560, screenW * 0.4), height: min(420, screenH * 0.4))
+        window.setContentSize(contentSize)
+        window.contentMinSize = contentSize
+        window.contentMaxSize = contentSize
         window.toolbar = nil
         window.center()
         window.isReleasedWhenClosed = false
