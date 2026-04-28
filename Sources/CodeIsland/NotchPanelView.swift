@@ -16,6 +16,7 @@ struct NotchPanelView: View {
     @AppStorage(SettingsKey.collapsedWidthScale) private var collapsedWidthScale = SettingsDefaults.collapsedWidthScale
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
+    @AppStorage(SettingsKey.hoverExpandDelay) private var hoverExpandDelay = SettingsDefaults.hoverExpandDelay
 
     /// Delayed hover: prevents accidental expansion when mouse passes through
     @State private var hoverTimer: Timer?
@@ -254,7 +255,7 @@ struct NotchPanelView: View {
                 if hovering {
                     // Delay expansion to avoid accidental triggers
                     hoverTimer?.invalidate()
-                    hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: false) { _ in
+                    hoverTimer = Timer.scheduledTimer(withTimeInterval: hoverExpandDelay, repeats: false) { _ in
                         Task { @MainActor in
                             // Guard: mouse may have left during the delay
                             guard isHovered else { return }
