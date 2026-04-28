@@ -117,6 +117,11 @@ compile_asset_catalog_with_retries() {
 
 compile_asset_catalog_with_retries
 
+if [ ! -f "$CONTENTS_DIR/Resources/Assets.car" ] && [ ! -f "$CONTENTS_DIR/Resources/AppIcon.icns" ]; then
+    echo "ERROR: Asset catalog compilation did not produce app icon resources" >&2
+    exit 1
+fi
+
 # Copy SPM resource bundles into Contents/Resources/ — putting them at the .app
 # root breaks Developer ID signing with "unsealed contents present in the bundle
 # root". Bundle.module already checks resourceURL, so this layout loads fine.
