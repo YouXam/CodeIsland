@@ -74,18 +74,48 @@ CURRENT_VER=$(defaults read "$REPO_ROOT/Info.plist" CFBundleShortVersionString)
 sed -e "s/<string>${CURRENT_VER}<\/string>/<string>${VERSION}<\/string>/g" \
     "$REPO_ROOT/Info.plist" > "$CONTENTS_DIR/Info.plist"
 
-# Compile app icon and asset catalog
-xcrun actool \
-    --output-format human-readable-text \
-    --notices --warnings --errors \
-    --platform macosx \
-    --target-device mac \
-    --minimum-deployment-target 14.0 \
-    --app-icon AppIcon \
-    --output-partial-info-plist /dev/null \
-    --compile "$CONTENTS_DIR/Resources" \
-    "$REPO_ROOT/Assets.xcassets" \
-    "$REPO_ROOT/AppIcon.icon"
+# Compile app icon and asset catalog. Xcode's AssetCatalogAgent can crash
+# sporadically on GitHub-hosted macOS runners, so retry only this narrow step.
+compile_asset_catalog() {
+    xcrun actool \
+        --output-format human-readable-text \
+        --notices --warnings --errors \
+        --platform macosx \
+        --target-device mac \
+        --minimum-deployment-target 14.0 \
+        --app-icon AppIcon \
+        --output-partial-info-plist /dev/null \
+        --compile "$CONTENTS_DIR/Resources" \
+        "$REPO_ROOT/Assets.xcassets" \
+        "$REPO_ROOT/AppIcon.icon"
+}
+
+compile_asset_catalog_with_retries() {
+    local attempt
+    local max_attempts=3
+
+    for attempt in $(seq 1 "$max_attempts"); do
+        rm -rf "$CONTENTS_DIR/Resources"
+        mkdir -p "$CONTENTS_DIR/Resources"
+
+        echo "==> Compiling app icon and asset catalog (attempt ${attempt}/${max_attempts})"
+        if compile_asset_catalog; then
+            return 0
+        fi
+
+        if [ "$attempt" -eq "$max_attempts" ]; then
+            echo "ERROR: Asset catalog compilation failed after ${max_attempts} attempts" >&2
+            return 1
+        fi
+
+        echo "==> actool failed; resetting AssetCatalogAgent before retry" >&2
+        pkill -x AssetCatalogAgent 2>/dev/null || true
+        pkill -x ibtoold 2>/dev/null || true
+        sleep $((attempt * 5))
+    done
+}
+
+compile_asset_catalog_with_retries
 
 # Copy SPM resource bundles into Contents/Resources/ — putting them at the .app
 # root breaks Developer ID signing with "unsealed contents present in the bundle
