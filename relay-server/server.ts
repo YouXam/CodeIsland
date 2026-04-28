@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { Database } from "bun:sqlite";
+import type { ServerWebSocket } from "bun";
 
 type Role = "viewer" | "agent";
 
@@ -19,11 +20,24 @@ type StoredUser = {
   version?: string;
 };
 
+type RelayResult = {
+  requestId: string;
+  delivered: number;
+  payload?: Record<string, unknown>;
+  timedOut?: boolean;
+};
+
 type PendingRequest = {
   apiKey: string;
-  agent: ServerWebSocket<ClientData>;
+  delivered: number;
   timer: ReturnType<typeof setTimeout>;
   payload: Record<string, unknown>;
+  complete: (
+    result: RelayResult,
+    notifyViewers?: boolean,
+    exclude?: ServerWebSocket<ClientData>,
+  ) => void;
+  agent?: ServerWebSocket<ClientData>;
 };
 
 const port = Number(process.env.PORT ?? process.env.CODEISLAND_RELAY_PORT ?? "8787");
@@ -109,6 +123,12 @@ function nonEmptyString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function bearerAPIKey(request: Request) {
+  const authorization = request.headers.get("Authorization") ?? "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return nonEmptyString(match?.[1]);
+}
+
 function safeSend(ws: ServerWebSocket<ClientData>, body: unknown) {
   try {
     ws.send(JSON.stringify(body));
@@ -133,6 +153,7 @@ function firstEventName(payload: Record<string, unknown>) {
     ?? nonEmptyString(payload.hookEventName)
     ?? nonEmptyString(payload.event_name)
     ?? nonEmptyString(payload.eventName)
+    ?? nonEmptyString(payload.event)
     ?? "";
 }
 
@@ -177,8 +198,22 @@ function removeViewer(ws: ServerWebSocket<ClientData>) {
 function cleanupAgentPending(ws: ServerWebSocket<ClientData>) {
   for (const [requestId, pending] of pendingRequests) {
     if (pending.agent !== ws) continue;
-    clearTimeout(pending.timer);
-    pendingRequests.delete(requestId);
+    const payload = defaultResponse(pending.payload);
+    pending.complete({ requestId, delivered: pending.delivered, payload, timedOut: true }, true);
+  }
+}
+
+function broadcastResolved(
+  apiKey: string,
+  requestId: string,
+  payload: Record<string, unknown>,
+  exclude?: ServerWebSocket<ClientData>,
+) {
+  const viewers = viewersByKey.get(apiKey);
+  if (!viewers) return;
+  for (const viewer of viewers) {
+    if (viewer === exclude) continue;
+    safeSend(viewer, { type: "request_resolved", requestId, payload });
   }
 }
 
@@ -212,7 +247,93 @@ function handleHello(ws: ServerWebSocket<ClientData>, msg: Record<string, unknow
   });
 }
 
-function handleAgentEvent(ws: ServerWebSocket<ClientData>, msg: Record<string, unknown>) {
+async function relayEvent(input: {
+  apiKey: string;
+  requestId?: string;
+  expectsResponse: boolean;
+  hostId?: string;
+  hostName?: string;
+  payload: Record<string, unknown>;
+  agent?: ServerWebSocket<ClientData>;
+  abortSignal?: AbortSignal;
+}): Promise<RelayResult> {
+  const hostId = input.hostId ?? "unknown";
+  const hostName = input.hostName ?? hostId;
+  const requestId = input.requestId ?? randomUUID();
+  const payload: Record<string, unknown> = { ...input.payload };
+  payload._remote_host_id = nonEmptyString(payload._remote_host_id) ?? relayHostId(hostId);
+  payload._remote_host_name = nonEmptyString(payload._remote_host_name) ?? hostName;
+
+  const envelope = {
+    type: "event",
+    requestId,
+    expectsResponse: input.expectsResponse,
+    hostId,
+    hostName,
+    payload,
+  };
+
+  const viewers = viewersByKey.get(input.apiKey);
+  if (!viewers || viewers.size === 0) {
+    if (input.expectsResponse) {
+      return { requestId, delivered: 0, payload: defaultResponse(payload) };
+    }
+    return { requestId, delivered: 0 };
+  }
+
+  let delivered = 0;
+  for (const viewer of viewers) {
+    safeSend(viewer, envelope);
+    delivered += 1;
+  }
+
+  if (!input.expectsResponse) {
+    return { requestId, delivered };
+  }
+
+  return await new Promise<RelayResult>((resolve) => {
+    const timer = setTimeout(abortPending, requestTimeoutMs);
+    let settled = false;
+
+    function complete(
+      result: RelayResult,
+      notifyViewers = false,
+      exclude?: ServerWebSocket<ClientData>,
+    ) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      pendingRequests.delete(requestId);
+      input.abortSignal?.removeEventListener("abort", abortPending);
+      resolve(result);
+      if (notifyViewers && result.payload) {
+        broadcastResolved(input.apiKey, requestId, result.payload, exclude);
+      }
+    }
+
+    function abortPending() {
+      const responsePayload = defaultResponse(payload);
+      complete({ requestId, delivered, payload: responsePayload, timedOut: true }, true);
+    }
+
+    if (input.abortSignal?.aborted) {
+      abortPending();
+      return;
+    }
+    input.abortSignal?.addEventListener("abort", abortPending, { once: true });
+
+    pendingRequests.set(requestId, {
+      apiKey: input.apiKey,
+      delivered,
+      timer,
+      payload,
+      complete,
+      agent: input.agent,
+    });
+  });
+}
+
+async function handleAgentEvent(ws: ServerWebSocket<ClientData>, msg: Record<string, unknown>) {
   const key = ws.data.apiKey;
   if (ws.data.role !== "agent" || !key) {
     safeSend(ws, { type: "error", message: "agent hello required" });
@@ -224,49 +345,27 @@ function handleAgentEvent(ws: ServerWebSocket<ClientData>, msg: Record<string, u
     return;
   }
 
-  const hostId = nonEmptyString(msg.hostId) ?? ws.data.hostId ?? "unknown";
-  const hostName = nonEmptyString(msg.hostName) ?? ws.data.hostName ?? hostId;
-  const requestId = nonEmptyString(msg.requestId) ?? randomUUID();
   const expectsResponse = msg.expectsResponse === true;
-  const payload: Record<string, unknown> = { ...msg.payload };
-  payload._remote_host_id = nonEmptyString(payload._remote_host_id) ?? relayHostId(hostId);
-  payload._remote_host_name = nonEmptyString(payload._remote_host_name) ?? hostName;
-
-  const envelope = {
-    type: "event",
-    requestId,
+  const result = await relayEvent({
+    apiKey: key,
+    requestId: nonEmptyString(msg.requestId),
     expectsResponse,
-    hostId,
-    hostName,
-    payload,
-  };
+    hostId: nonEmptyString(msg.hostId) ?? ws.data.hostId,
+    hostName: nonEmptyString(msg.hostName) ?? ws.data.hostName,
+    payload: msg.payload,
+    agent: ws,
+  });
 
-  const viewers = viewersByKey.get(key);
-  if (!viewers || viewers.size === 0) {
-    if (expectsResponse) {
-      safeSend(ws, { type: "response", requestId, payload: defaultResponse(payload) });
-    } else {
-      safeSend(ws, { type: "ack", requestId, delivered: 0 });
-    }
-    return;
+  if (expectsResponse) {
+    safeSend(ws, {
+      type: "response",
+      requestId: result.requestId,
+      payload: result.payload ?? defaultResponse(msg.payload),
+      timedOut: result.timedOut,
+    });
+  } else {
+    safeSend(ws, { type: "ack", requestId: result.requestId, delivered: result.delivered });
   }
-
-  let delivered = 0;
-  for (const viewer of viewers) {
-    safeSend(viewer, envelope);
-    delivered += 1;
-  }
-
-  if (!expectsResponse) {
-    safeSend(ws, { type: "ack", requestId, delivered });
-    return;
-  }
-
-  const timer = setTimeout(() => {
-    pendingRequests.delete(requestId);
-    safeSend(ws, { type: "response", requestId, payload: defaultResponse(payload), timedOut: true });
-  }, requestTimeoutMs);
-  pendingRequests.set(requestId, { apiKey: key, agent: ws, timer, payload });
 }
 
 function handleViewerResponse(ws: ServerWebSocket<ClientData>, msg: Record<string, unknown>) {
@@ -288,14 +387,43 @@ function handleViewerResponse(ws: ServerWebSocket<ClientData>, msg: Record<strin
     return;
   }
 
-  clearTimeout(pending.timer);
-  pendingRequests.delete(requestId);
-  safeSend(pending.agent, {
-    type: "response",
-    requestId,
-    payload: isRecord(msg.payload) ? msg.payload : defaultResponse(pending.payload),
-  });
+  const payload = isRecord(msg.payload) ? msg.payload : defaultResponse(pending.payload);
+  pending.complete({ requestId, delivered: pending.delivered, payload }, true, ws);
   safeSend(ws, { type: "ack", requestId });
+}
+
+async function handleHttpEvent(request: Request) {
+  const body = await request.json().catch(() => undefined);
+  if (!isRecord(body)) {
+    return jsonResponse({ error: "invalid_json" }, 400);
+  }
+
+  const key = nonEmptyString(body.apiKey) ?? bearerAPIKey(request);
+  if (!key || !usersByKey.has(key)) {
+    return jsonResponse({ error: "invalid_api_key", message: "Invalid API Key" }, 401);
+  }
+
+  if (!isRecord(body.payload)) {
+    return jsonResponse({ error: "invalid_payload", message: "event payload must be an object" }, 400);
+  }
+
+  const result = await relayEvent({
+    apiKey: key,
+    requestId: nonEmptyString(body.requestId),
+    expectsResponse: body.expectsResponse === true,
+    hostId: nonEmptyString(body.hostId),
+    hostName: nonEmptyString(body.hostName),
+    payload: body.payload,
+    abortSignal: request.signal,
+  });
+
+  return jsonResponse({
+    ok: true,
+    requestId: result.requestId,
+    delivered: result.delivered,
+    payload: result.payload,
+    timedOut: result.timedOut,
+  });
 }
 
 const server = Bun.serve<ClientData>({
@@ -336,6 +464,10 @@ const server = Bun.serve<ClientData>({
       return jsonResponse({ apiKey: user.apiKey });
     }
 
+    if (request.method === "POST" && url.pathname === "/api/event") {
+      return await handleHttpEvent(request);
+    }
+
     if (request.method === "GET" && url.pathname === "/ws") {
       const upgraded = bunServer.upgrade(request, { data: {} });
       if (upgraded) return undefined;
@@ -366,7 +498,7 @@ const server = Bun.serve<ClientData>({
           handleHello(ws, parsed);
           break;
         case "event":
-          handleAgentEvent(ws, parsed);
+          void handleAgentEvent(ws, parsed);
           break;
         case "response":
           handleViewerResponse(ws, parsed);

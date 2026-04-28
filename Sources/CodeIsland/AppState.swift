@@ -1436,6 +1436,47 @@ final class AppState {
         }
     }
 
+    /// Called when another relay viewer answered the same remote request.
+    func handleRelayRequestResolved(requestId: String) {
+        let trimmed = requestId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        var affectedSessionIds = Set<String>()
+        let denyResponse = Data(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#.utf8)
+
+        permissionQueue.removeAll { item in
+            guard item.event.rawJSON["_relay_request_id"] as? String == trimmed else { return false }
+            let sessionId = item.event.sessionId ?? "default"
+            affectedSessionIds.insert(sessionId)
+            item.continuation.resume(returning: denyResponse)
+            return true
+        }
+
+        questionQueue.removeAll { item in
+            guard item.event.rawJSON["_relay_request_id"] as? String == trimmed else { return false }
+            let sessionId = item.event.sessionId ?? "default"
+            affectedSessionIds.insert(sessionId)
+            if item.isFromPermission {
+                item.continuation.resume(returning: denyResponse)
+            } else {
+                item.continuation.resume(returning: Data("{}".utf8))
+            }
+            return true
+        }
+
+        guard !affectedSessionIds.isEmpty else { return }
+        for sessionId in affectedSessionIds {
+            dismissedPermissionSessionIds.remove(sessionId)
+            if sessions[sessionId]?.status == .waitingApproval || sessions[sessionId]?.status == .waitingQuestion {
+                sessions[sessionId]?.status = .processing
+                sessions[sessionId]?.currentTool = nil
+                sessions[sessionId]?.toolDescription = nil
+            }
+        }
+        showNextPending()
+        refreshDerivedState()
+    }
+
     /// Called when the bridge socket disconnects — the question/permission was answered externally (e.g. user replied in terminal)
     func handlePeerDisconnect(sessionId: String) {
         let hadPending = questionQueue.contains(where: { $0.event.sessionId == sessionId })

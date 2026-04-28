@@ -200,19 +200,50 @@ final class AppStatePermissionFlowTests: XCTestCase {
         XCTAssertNotEqual(first.joined(separator: "|"), second.joined(separator: "|"))
     }
 
+    func testRelayRequestResolvedDrainsMatchingPermission() async throws {
+        let appState = AppState()
+        let event = try makePermissionRequestEvent(
+            sessionId: "s-relay",
+            toolName: "Bash",
+            relayRequestId: "relay-request-1"
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handlePermissionRequest(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+
+        XCTAssertEqual(appState.permissionQueue.count, 1)
+        XCTAssertEqual(appState.sessions["s-relay"]?.status, .waitingApproval)
+
+        appState.handleRelayRequestResolved(requestId: "relay-request-1")
+
+        let response = await responseTask.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response), "deny")
+        XCTAssertEqual(appState.permissionQueue.count, 0)
+        XCTAssertEqual(appState.sessions["s-relay"]?.status, .processing)
+    }
+
     // MARK: - Helpers
 
     private func makePermissionRequestEvent(
         sessionId: String,
         toolName: String,
-        toolInput: [String: Any] = ["command": "echo test"]
+        toolInput: [String: Any] = ["command": "echo test"],
+        relayRequestId: String? = nil
     ) throws -> HookEvent {
-        let payload: [String: Any] = [
+        var payload: [String: Any] = [
             "hook_event_name": "PermissionRequest",
             "session_id": sessionId,
             "tool_name": toolName,
             "tool_input": toolInput
         ]
+        if let relayRequestId {
+            payload["_relay_request_id"] = relayRequestId
+        }
         let data = try JSONSerialization.data(withJSONObject: payload)
         guard let event = HookEvent(from: data) else {
             XCTFail("Failed to parse HookEvent")

@@ -29,3 +29,5 @@ android-watch/**/build/
 .claude/
 skills-lock.json
 CLAUDE.md
+
+node_modules/

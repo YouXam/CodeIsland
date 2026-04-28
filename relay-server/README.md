@@ -1,6 +1,6 @@
 # CodeIsland Relay Server
 
-Self-hosted Bun WebSocket relay for remote CodeIsland agents.
+Self-hosted relay server for remote CodeIsland agents.
 
 ```bash
 bun run server.ts
@@ -15,7 +15,8 @@ Environment:
 Endpoints:
 
 - `POST /api/register` returns `{ "apiKey": "..." }`
-- `GET /ws` accepts viewer and agent WebSocket clients
+- `POST /api/event` accepts one-shot remote hook events
+- `GET /ws` accepts CodeIsland viewer WebSocket clients
 - `GET /health` returns basic health state
 - `GET /resources/install.sh` remote machine installer
 - `GET /resources/codeisland-relay-hook.py` remote hook script
