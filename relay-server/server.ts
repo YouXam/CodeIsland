@@ -240,6 +240,12 @@ function handleHello(ws: ServerWebSocket<ClientData>, msg: Record<string, unknow
     viewerSet(key).add(ws);
   }
 
+  const hostLabel = ws.data.hostName ?? ws.data.hostId ?? "unknown";
+  const keyPreview = `${key.slice(0, 8)}…`;
+  console.log(
+    `[${new Date().toISOString()}] client connected role=${role} host=${hostLabel} apiKey=${keyPreview}`,
+  );
+
   safeSend(ws, {
     type: "hello_ack",
     role,
