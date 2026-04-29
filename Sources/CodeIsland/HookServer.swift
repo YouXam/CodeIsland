@@ -145,7 +145,7 @@ class HookServer {
     /// Wraps the raw event in a small envelope (event/source/session/cwd/tool/raw)
     /// so users on the receiving side don't need to dig through bridge-internal
     /// fields. Optional event-name allow-list filters noisy event types. (#115)
-    private static func forwardEventToWebhook(_ event: HookEvent) {
+    static func forwardEventToWebhook(_ event: HookEvent) {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: SettingsKey.webhookEnabled) else { return }
         // Trim whitespace — users routinely paste URLs with leading/trailing space
