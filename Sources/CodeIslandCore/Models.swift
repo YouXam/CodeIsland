@@ -22,9 +22,45 @@ public enum CLIProcessResolver {
                 || lowercasedPath.contains("/qwen-code ")
         case "gemini":
             return lowercasedPath.hasSuffix("/gemini") || lowercasedPath.contains("/gemini ")
+        case "cursor-cli":
+            // Cursor's CLI agent installs to ~/.local/share/cursor-agent/versions/<v>/cursor-agent
+            // and is also referenced by /cursor-agent/index.js when invoked via Node.
+            return lowercasedPath.contains("/cursor-agent")
+        case "qoder-cli":
+            // npm @qoder-ai/qodercli installs as `qodercli` in PATH (Homebrew/npm-global)
+            return lowercasedPath.hasSuffix("/qodercli")
+                || lowercasedPath.contains("/qodercli ")
+                || lowercasedPath.contains("/@qoder-ai/qodercli")
         default:
             return lowercasedPath.contains("/\(normalizedSource)")
         }
+    }
+
+    /// When the caller passed `--source cursor` or `--source qoder` but the
+    /// process ancestry actually came from the CLI agent rather than the
+    /// desktop IDE (both write to the same hooks file — see issue #134),
+    /// promote the source to its `-cli` variant so CodeIsland renders it
+    /// as "Cursor CLI" / "Qoder CLI" and routes terminal jumps correctly.
+    public static func cliVariantOverride(
+        declaredSource: String?,
+        ancestry: [(pid: Int32, executablePath: String?)]
+    ) -> String? {
+        guard let normalized = SessionSnapshot.normalizedSupportedSource(declaredSource) else {
+            return nil
+        }
+        switch normalized {
+        case "cursor":
+            if ancestry.contains(where: { sourceMatchesExecutablePath($0.executablePath ?? "", source: "cursor-cli") }) {
+                return "cursor-cli"
+            }
+        case "qoder":
+            if ancestry.contains(where: { sourceMatchesExecutablePath($0.executablePath ?? "", source: "qoder-cli") }) {
+                return "qoder-cli"
+            }
+        default:
+            break
+        }
+        return nil
     }
 
     public static func resolvedTrackedPID(
@@ -48,10 +84,14 @@ public enum CLIProcessResolver {
     /// `--source` tag (e.g. omo plugin firing Claude hooks from inside OpenCode), so
     /// we can recover the real source instead of letting the event default to Claude.
     public static func inferSource(ancestry: [(pid: Int32, executablePath: String?)]) -> String? {
-        let candidates = SessionSnapshot.supportedSources.sorted()
+        // Try `-cli` variants first so `cursor-agent` doesn't get mis-attributed
+        // to the desktop `cursor` source (see issue #134).
+        let all = SessionSnapshot.supportedSources
+        let cliFirst = all.filter { $0.hasSuffix("-cli") }.sorted()
+            + all.filter { !$0.hasSuffix("-cli") }.sorted()
         for entry in ancestry {
             guard let path = entry.executablePath, !path.isEmpty else { continue }
-            for source in candidates {
+            for source in cliFirst {
                 if sourceMatchesExecutablePath(path, source: source) {
                     return source
                 }

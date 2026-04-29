@@ -181,10 +181,10 @@ public enum MascotID: UInt8, CaseIterable, Sendable {
         case "claude":                               self = .claude
         case "codex":                                self = .codex
         case "gemini":                               self = .gemini
-        case "cursor":                               self = .cursor
+        case "cursor", "cursor-cli":                 self = .cursor
         case "copilot":                              self = .copilot
         case "trae", "traecn", "traecli":            self = .trae
-        case "qoder":                                self = .qoder
+        case "qoder", "qoder-cli":                   self = .qoder
         case "droid":                                self = .droid
         case "codebuddy", "codybuddycn":             self = .codebuddy
         case "stepfun":                              self = .stepfun

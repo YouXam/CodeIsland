@@ -14,11 +14,13 @@ public struct SessionSnapshot: Sendable {
         "codex",
         "gemini",
         "cursor",
+        "cursor-cli",
         "trae",
         "traecn",
         "traecli",
         "copilot",
         "qoder",
+        "qoder-cli",
         "droid",
         "codebuddy",
         "codybuddycn",
@@ -98,6 +100,10 @@ public struct SessionSnapshot: Sendable {
             "hermes agents": "hermes",
             "qwen-code": "qwen",
             "qwencode": "qwen",
+            "cursor-agent": "cursor-cli",
+            "cursoragent": "cursor-cli",
+            "cursorcli": "cursor-cli",
+            "qodercli": "qoder-cli",
             "kimi-cli": "kimi",
             "kimicli": "kimi",
             "kiro-cli": "kiro",
@@ -258,10 +264,12 @@ public struct SessionSnapshot: Sendable {
         case "codex": return "Codex"
         case "gemini": return "Gemini"
         case "cursor": return "Cursor"
+        case "cursor-cli": return "Cursor CLI"
         case "trae": return "Trae"
         case "traecn": return "Trae CN"
         case "traecli": return "Traecli"
         case "qoder": return "Qoder"
+        case "qoder-cli": return "Qoder CLI"
         case "droid": return "Factory"
         case "codebuddy": return "CodeBuddy"
         case "codybuddycn": return "CodyBuddyCN"
