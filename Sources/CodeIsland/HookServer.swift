@@ -2,6 +2,7 @@ import Foundation
 import Network
 import os.log
 import ApplicationServices
+import CoreAudio
 import CodeIslandCore
 
 private let log = Logger(subsystem: "com.codeisland", category: "HookServer")
@@ -167,9 +168,10 @@ class HookServer {
         }
 
         // Suppress webhook when the user is actively at this Mac:
-        // sound notifications on (so the user already gets local alerts) AND screen is unlocked.
+        // sound notifications on, system audio not muted, AND screen is unlocked.
         if defaults.bool(forKey: SettingsKey.webhookSuppressWhenActive),
            defaults.bool(forKey: SettingsKey.soundEnabled),
+           !Self.isSystemMuted(),
            !Self.isScreenLocked() {
             return
         }
@@ -208,6 +210,29 @@ class HookServer {
     private static func isScreenLocked() -> Bool {
         guard let info = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
         return (info["CGSSessionScreenIsLocked"] as? Int) == 1
+    }
+
+    /// Returns `true` when the default audio output device is muted.
+    private static func isSystemMuted() -> Bool {
+        var deviceId = AudioObjectID(kAudioObjectSystemObject)
+        var size = UInt32(MemoryLayout<AudioObjectID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &deviceId
+        ) == noErr else { return false }
+
+        var muted: UInt32 = 0
+        size = UInt32(MemoryLayout<UInt32>.size)
+        address.mSelector = kAudioDevicePropertyMute
+        address.mScope = kAudioDevicePropertyScopeOutput
+        guard AudioObjectGetPropertyData(deviceId, &address, 0, nil, &size, &muted) == noErr else {
+            return false
+        }
+        return muted != 0
     }
 
     static func routeKind(for event: HookEvent) -> RouteKind {
