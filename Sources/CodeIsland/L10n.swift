@@ -147,6 +147,8 @@ final class L10n: ObservableObject {
         "webhook_url_placeholder": "https://your.webhook.example/hook",
         "webhook_filter_placeholder": "Optional: Stop,SessionEnd,PermissionRequest",
         "webhook_filter_hint": "Comma-separated event names; empty = forward every event. Names can be normalized (PreToolUse) or raw (pre_tool_use).",
+        "webhook_suppress_when_active": "Suppress when using this Mac",
+        "webhook_suppress_when_active_desc": "Skip webhook forwarding when sound notifications are enabled and the screen is unlocked, to avoid duplicate alerts.",
 
         // Appearance
         "preview": "Preview",
@@ -466,6 +468,8 @@ final class L10n: ObservableObject {
         "webhook_url_placeholder": "https://你的.webhook.地址/hook",
         "webhook_filter_placeholder": "可选：Stop,SessionEnd,PermissionRequest",
         "webhook_filter_hint": "逗号分隔的事件名，留空 = 转发所有事件。支持规范化名（PreToolUse）或原始名（pre_tool_use）。",
+        "webhook_suppress_when_active": "使用本机时不推送",
+        "webhook_suppress_when_active_desc": "开启音效通知且屏幕未锁定时跳过 Webhook 转发，避免重复提醒。",
 
         // Appearance
         "preview": "预览",
@@ -785,6 +789,8 @@ final class L10n: ObservableObject {
         "webhook_url_placeholder": "https://あなたの.webhook.アドレス/hook",
         "webhook_filter_placeholder": "オプション: Stop,SessionEnd,PermissionRequest",
         "webhook_filter_hint": "カンマ区切りのイベント名、空 = すべてのイベントを転送。正規化名（PreToolUse）または raw 名（pre_tool_use）対応。",
+        "webhook_suppress_when_active": "この Mac を使用中は通知を抑制",
+        "webhook_suppress_when_active_desc": "効果音通知が有効でスクリーンがロックされていないとき、Webhook 転送をスキップして通知の重複を防ぎます。",
 
         // Appearance
         "preview": "プレビュー",
@@ -1104,6 +1110,8 @@ final class L10n: ObservableObject {
         "webhook_url_placeholder": "https://your.webhook.example/hook",
         "webhook_filter_placeholder": "선택: Stop,SessionEnd,PermissionRequest",
         "webhook_filter_hint": "쉼표로 구분된 이벤트명, 비어 있음 = 모든 이벤트 전달. 정규화된 이름(PreToolUse) 또는 원본(pre_tool_use) 모두 지원.",
+        "webhook_suppress_when_active": "이 Mac 사용 중 알림 억제",
+        "webhook_suppress_when_active_desc": "사운드 알림이 켜져 있고 화면이 잠기지 않았을 때 Webhook 전달을 건너뛰어 중복 알림을 방지합니다.",
 
         // Appearance
         "preview": "미리보기",
@@ -1423,6 +1431,8 @@ final class L10n: ObservableObject {
         "webhook_url_placeholder": "https://your.webhook.example/hook",
         "webhook_filter_placeholder": "İsteğe bağlı: Stop,SessionEnd,PermissionRequest",
         "webhook_filter_hint": "Virgülle ayrılmış olay adları, boş = tüm olayları iletir. Normalleştirilmiş (PreToolUse) veya ham (pre_tool_use) ad desteklenir.",
+        "webhook_suppress_when_active": "Bu Mac kullanılırken bildirimi bastır",
+        "webhook_suppress_when_active_desc": "Ses bildirimleri açıkken ve ekran kilitli değilken yinelenen uyarıları önlemek için Webhook iletmeyi atla.",
 
         // Appearance
         "preview": "Önizleme",

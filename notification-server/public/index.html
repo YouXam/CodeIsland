@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CodeIsland Notification Server</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0a0a0a;
+      color: #e4e4e7;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 60px 24px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 12px;
+    }
+    .header img {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+    }
+    .header h1 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #fafafa;
+    }
+    .subtitle {
+      color: #a1a1aa;
+      font-size: 15px;
+      margin-bottom: 48px;
+    }
+    h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #fafafa;
+      margin: 36px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #27272a;
+    }
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #d4d4d8;
+      margin: 20px 0 8px;
+    }
+    p, li {
+      font-size: 14px;
+      color: #a1a1aa;
+    }
+    p { margin-bottom: 12px; }
+    ul {
+      padding-left: 20px;
+      margin-bottom: 12px;
+    }
+    li { margin-bottom: 4px; }
+    code {
+      font-family: "SF Mono", SFMono-Regular, ui-monospace, Menlo, Consolas, monospace;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 13px;
+      color: #e4e4e7;
+    }
+    pre {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .comment { color: #52525b; }
+    .string { color: #a78bfa; }
+    .key { color: #60a5fa; }
+    .endpoint {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .method {
+      background: #065f46;
+      color: #6ee7b7;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-family: "SF Mono", monospace;
+      flex-shrink: 0;
+    }
+    .path {
+      font-family: "SF Mono", monospace;
+      font-size: 14px;
+      color: #e4e4e7;
+      word-break: break-all;
+    }
+    .path span { color: #a78bfa; }
+    .icons-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .icon-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 12px 4px;
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 8px;
+    }
+    .icon-item img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+    .icon-item span {
+      font-size: 11px;
+      color: #71717a;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      font-size: 14px;
+    }
+    th {
+      text-align: left;
+      padding: 8px 12px;
+      border-bottom: 1px solid #27272a;
+      color: #d4d4d8;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    td {
+      padding: 8px 12px;
+      border-bottom: 1px solid #18181b;
+      color: #a1a1aa;
+    }
+    td code {
+      font-size: 12px;
+    }
+    .note {
+      background: #1c1917;
+      border: 1px solid #44403c;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-size: 13px;
+      color: #d6d3d1;
+      margin-bottom: 16px;
+    }
+    .footer {
+      margin-top: 64px;
+      padding-top: 24px;
+      border-top: 1px solid #27272a;
+      font-size: 13px;
+      color: #52525b;
+      text-align: center;
+    }
+    a { color: #818cf8; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <img src="/icons/default.png" alt="CodeIsland" />
+      <h1>CodeIsland Notification Server</h1>
+    </div>
+    <p class="subtitle">Stateless webhook-to-push gateway for CodeIsland. Receives webhook events and forwards them as push notifications.</p>
+
+    <h2>Bark</h2>
+    <p>Forward CodeIsland webhook events to <a href="https://github.com/Finb/Bark">Bark</a> for iOS push notifications.</p>
+
+    <div class="endpoint">
+      <span class="method">POST</span>
+      <span class="path">/webhook/bark/<span>:token</span></span>
+    </div>
+
+    <h3>Setup</h3>
+    <p>In CodeIsland settings, enable <strong>Webhook Forwarding</strong> and set the URL to:</p>
+    <pre><code id="setup-url"></code></pre>
+
+    <div class="note">
+      Self-hosted Bark server? Append <code>?server=https://your-bark-server.com</code> to the URL.
+    </div>
+
+    <h3>Behavior</h3>
+    <ul>
+      <li>Notifications are sent with <code>timeSensitive</code> level for immediate delivery through Focus mode.</li>
+      <li>Notification icon is automatically set based on the source agent (Claude, Codex, Gemini, etc.).</li>
+      <li>Notifications are grouped by agent name in the iOS notification center.</li>
+      <li>Push history is archived in Bark by default.</li>
+    </ul>
+
+    <h3>Request Body</h3>
+    <p>The request body is the standard CodeIsland webhook payload:</p>
+    <pre><code>{
+  <span class="key">"event"</span>:      <span class="string">"Notification"</span>,
+  <span class="key">"raw_event"</span>:  <span class="string">"notification"</span>,
+  <span class="key">"session_id"</span>: <span class="string">"..."</span>,
+  <span class="key">"source"</span>:     <span class="string">"claude"</span>,
+  <span class="key">"cwd"</span>:        <span class="string">"/path/to/project"</span>,
+  <span class="key">"tool_name"</span>:  <span class="string">"Bash"</span>,
+  <span class="key">"timestamp"</span>:  <span class="string">"2026-04-29T12:00:00.000Z"</span>,
+  <span class="key">"raw"</span>:        { <span class="comment">/* original hook event payload */</span> }
+}</code></pre>
+
+    <h3>Response</h3>
+    <pre><code>{
+  <span class="key">"ok"</span>:   true,
+  <span class="key">"bark"</span>: { <span class="key">"code"</span>: 200, <span class="key">"message"</span>: <span class="string">"success"</span> }
+}</code></pre>
+
+    <h3>Parameters</h3>
+    <table>
+      <thead>
+        <tr><th>Parameter</th><th>Location</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>:token</code></td><td>URL path</td><td>Your Bark device key</td></tr>
+        <tr><td><code>server</code></td><td>Query string</td><td>Custom Bark server URL (optional, defaults to <code>api.day.app</code>)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>cURL Example</h3>
+    <pre><code id="curl-example">curl -X POST <span id="curl-origin"></span>/webhook/bark/YOUR_TOKEN \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "event": "Notification",
+    "raw_event": "notification",
+    "session_id": "abc-123",
+    "source": "claude",
+    "cwd": "/home/user/project",
+    "tool_name": "",
+    "timestamp": "2026-04-29T12:00:00.000Z",
+    "raw": {"message": "Task completed"}
+  }'</code></pre>
+
+    <h2>Agent Icons</h2>
+    <p>Each supported agent has a dedicated icon served at <code>/icons/&lt;name&gt;.png</code>.</p>
+    <div class="icons-grid" id="icons-grid"></div>
+
+    <div class="footer">CodeIsland</div>
+  </div>
+
+  <script>
+    const agents = [
+      ["claude", "Claude"],
+      ["codex", "Codex"],
+      ["gemini", "Gemini"],
+      ["cursor", "Cursor"],
+      ["copilot", "Copilot"],
+      ["trae", "Trae"],
+      ["kimi", "Kimi"],
+      ["qoder", "Qoder"],
+      ["qwen", "Qwen"],
+      ["opencode", "OpenCode"],
+      ["antigravity", "AntiGravity"],
+      ["codebuddy", "CodeBuddy"],
+      ["factory", "Factory"],
+      ["hermes", "Hermes"],
+      ["pi", "Pi"],
+      ["stepfun", "StepFun"],
+      ["workbuddy", "WorkBuddy"],
+      ["default", "Default"],
+    ];
+    const origin = location.origin;
+    document.getElementById("setup-url").innerHTML =
+      `${origin}/webhook/bark/<span class="string">&lt;your-bark-token&gt;</span>`;
+    document.getElementById("curl-origin").textContent = origin;
+
+    const grid = document.getElementById("icons-grid");
+    agents.forEach(([file, name]) => {
+      const div = document.createElement("div");
+      div.className = "icon-item";
+      div.innerHTML = `<img src="/icons/${file}.png" alt="${name}"><span>${name}</span>`;
+      grid.appendChild(div);
+    });
+  </script>
+</body>
+</html>

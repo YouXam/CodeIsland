@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import os.log
+import ApplicationServices
 import CodeIslandCore
 
 private let log = Logger(subsystem: "com.codeisland", category: "HookServer")
@@ -165,6 +166,14 @@ class HookServer {
             guard allowed.contains(normalizedName) || allowed.contains(event.eventName) else { return }
         }
 
+        // Suppress webhook when the user is actively at this Mac:
+        // sound notifications on (so the user already gets local alerts) AND screen is unlocked.
+        if defaults.bool(forKey: SettingsKey.webhookSuppressWhenActive),
+           defaults.bool(forKey: SettingsKey.soundEnabled),
+           !Self.isScreenLocked() {
+            return
+        }
+
         let isoFormatter = ISO8601DateFormatter()
         isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
@@ -211,6 +220,14 @@ class HookServer {
         if let p = raw["_ppid"] as? Int32 { return Int(p) }
         if let p = raw["_ppid"] as? NSNumber { return p.intValue }
         return nil
+    }
+
+    /// Returns `true` when the screen is locked or the login window is showing.
+    /// Uses `CGSessionCopyCurrentDictionary` which returns a dict with key
+    /// "CGSSessionScreenIsLocked" == 1 when the session is locked.
+    private static func isScreenLocked() -> Bool {
+        guard let info = CGSessionCopyCurrentDictionary() as? [String: Any] else { return true }
+        return (info["CGSSessionScreenIsLocked"] as? Int) == 1
     }
 
     static func routeKind(for event: HookEvent) -> RouteKind {
