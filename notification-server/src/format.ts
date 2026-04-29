@@ -183,10 +183,19 @@ export function formatNotification(payload: WebhookPayload): NotificationData {
   const sourceName = getSourceDisplayName(payload.source);
   const eventLabel = EVENT_DISPLAY_NAMES[payload.event] || payload.event;
   const project = shortCwd(payload.cwd);
+  const hostName = payload.remote_host_name?.trim() || "";
+  const hasKnownIcon = payload.source && KNOWN_ICONS.has(payload.source);
 
-  // Title: Source · Event · ProjectFolder
-  const titleParts = [sourceName, eventLabel];
-  if (project) titleParts.push(project);
+  // Location: "project@host" or just "project"
+  const location = project
+    ? hostName ? `${project}@${hostName}` : project
+    : hostName || "";
+
+  // Title: omit source when it has a known icon (shown as push icon instead)
+  const titleParts: string[] = [];
+  if (!hasKnownIcon) titleParts.push(sourceName);
+  titleParts.push(eventLabel);
+  if (location) titleParts.push(location);
   const title = titleParts.join(" · ");
 
   // Body: event-specific content extraction, then tool description fallback
