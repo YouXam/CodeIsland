@@ -1945,16 +1945,8 @@ private struct SessionCard: View {
                         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                             HStack(spacing: 1) {
                                 ForEach(row, id: \.agentId) { sub in
-                                    let typeLabel = sub.agentType.isEmpty ? "Subagent" : sub.agentType
-                                    let tool = sub.currentTool.flatMap { $0.isEmpty ? nil : $0 }
-                                    let desc = sub.toolDescription.flatMap { $0.isEmpty ? nil : $0 }
-                                    let detail: String? = {
-                                        if let tool, let desc { return "\(tool) \(desc)" }
-                                        return tool
-                                    }()
-                                    let tooltip = detail.map { "\(typeLabel) — \($0)" } ?? typeLabel
                                     MiniAgentIcon(active: sub.status != .idle, size: 8)
-                                        .help(tooltip)
+                                        .help(subagentTooltipText(sub))
                                 }
                             }
                         }
@@ -2739,6 +2731,22 @@ private func shortSessionId(_ id: String) -> String {
         return String(clean.suffix(4))
     }
     return String(id.prefix(4))
+}
+
+/// Build the help-tooltip string for a subagent mini-icon. Lives outside
+/// the SwiftUI ViewBuilder so the body stays trivial — complex inline
+/// expressions in ForEach were measurably slowing the hover-expand
+/// animation per #141 review.
+private func subagentTooltipText(_ sub: SubagentState) -> String {
+    let typeLabel = sub.agentType.isEmpty ? "Subagent" : sub.agentType
+    var detail = ""
+    if let tool = sub.currentTool, !tool.isEmpty {
+        detail = tool
+        if let desc = sub.toolDescription, !desc.isEmpty {
+            detail += " " + desc
+        }
+    }
+    return detail.isEmpty ? typeLabel : "\(typeLabel) — \(detail)"
 }
 
 /// Strip internal directives (::code-comment{}, ::git-*{}, etc.) from message text
