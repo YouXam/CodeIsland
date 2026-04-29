@@ -5,6 +5,7 @@ export interface WebhookPayload {
   source: string;
   cwd: string;
   tool_name: string;
+  remote_host_name: string;
   timestamp: string;
   raw: Record<string, any>;
 }

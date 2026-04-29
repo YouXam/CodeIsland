@@ -186,6 +186,7 @@ class HookServer {
             "source": event.rawJSON["_source"] as? String ?? "",
             "cwd": event.rawJSON["cwd"] as? String ?? "",
             "tool_name": event.toolName ?? "",
+            "remote_host_name": event.rawJSON["_remote_host_name"] as? String ?? "",
             "timestamp": isoFormatter.string(from: Date()),
             "raw": event.rawJSON,
         ]
