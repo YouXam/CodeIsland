@@ -318,9 +318,12 @@ final class RelayConnectionManager: NSObject, ObservableObject {
         }
 
         guard expectsResponse, let requestId else {
+            HookServer.forwardEventToWebhook(event)
             appState?.handleEvent(event)
             return
         }
+
+        HookServer.forwardEventToWebhook(event)
 
         let normalizedEventName = EventNormalizer.normalize(event.eventName)
         if normalizedEventName == "PermissionRequest",
@@ -341,18 +344,23 @@ final class RelayConnectionManager: NSObject, ObservableObject {
                 sendResponse(requestId: requestId, payload: Self.defaultResponse(for: payload))
                 return
             }
+            let sessionId = event.sessionId ?? "default"
             if event.toolName == "AskUserQuestion" {
                 Task { @MainActor in
+                    let timeoutTask = self.scheduleRelayTimeout(sessionId: sessionId)
                     let responseBody = await withCheckedContinuation { continuation in
                         appState.handleAskUserQuestion(event, continuation: continuation)
                     }
+                    timeoutTask.cancel()
                     self.sendResponse(requestId: requestId, data: responseBody)
                 }
             } else {
                 Task { @MainActor in
+                    let timeoutTask = self.scheduleRelayTimeout(sessionId: sessionId)
                     let responseBody = await withCheckedContinuation { continuation in
                         appState.handlePermissionRequest(event, continuation: continuation)
                     }
+                    timeoutTask.cancel()
                     self.sendResponse(requestId: requestId, data: responseBody)
                 }
             }
@@ -364,10 +372,13 @@ final class RelayConnectionManager: NSObject, ObservableObject {
                 sendResponse(requestId: requestId, payload: Self.defaultResponse(for: payload))
                 return
             }
+            let sessionId = event.sessionId ?? "default"
             Task { @MainActor in
+                let timeoutTask = self.scheduleRelayTimeout(sessionId: sessionId)
                 let responseBody = await withCheckedContinuation { continuation in
                     appState.handleQuestion(event, continuation: continuation)
                 }
+                timeoutTask.cancel()
                 self.sendResponse(requestId: requestId, data: responseBody)
             }
             return
@@ -375,6 +386,17 @@ final class RelayConnectionManager: NSObject, ObservableObject {
 
         appState?.handleEvent(event)
         sendResponse(requestId: requestId, payload: [:])
+    }
+
+    /// Safety net: if a relay PermissionRequest / Question continuation is not
+    /// resolved within 5 minutes, drain it via handlePeerDisconnect to prevent
+    /// hanging. Mirrors HookServer's `monitorPeerDisconnect` 5-minute timeout.
+    private func scheduleRelayTimeout(sessionId: String) -> Task<Void, Never> {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 300_000_000_000)  // 5 minutes
+            guard !Task.isCancelled else { return }
+            self?.appState?.handlePeerDisconnect(sessionId: sessionId)
+        }
     }
 
     private func handleRelayRequestResolved(_ envelope: [String: Any]) {

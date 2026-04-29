@@ -243,6 +243,7 @@ class SettingsManager {
             SettingsKey.webhookEnabled: SettingsDefaults.webhookEnabled,
             SettingsKey.webhookURL: SettingsDefaults.webhookURL,
             SettingsKey.webhookEventFilter: SettingsDefaults.webhookEventFilter,
+            SettingsKey.webhookSuppressWhenActive: SettingsDefaults.webhookSuppressWhenActive,
             SettingsKey.relayServerURL: SettingsDefaults.relayServerURL,
             SettingsKey.relayAPIKey: SettingsDefaults.relayAPIKey,
             SettingsKey.relayAutoConnect: SettingsDefaults.relayAutoConnect,
