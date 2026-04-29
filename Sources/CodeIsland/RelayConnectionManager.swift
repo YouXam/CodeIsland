@@ -526,7 +526,10 @@ final class RelayConnectionManager: NSObject, ObservableObject {
             return nil
         }
         components.scheme = mappedScheme
-        components.path = path
+        let basePath = components.path.hasSuffix("/")
+            ? String(components.path.dropLast())
+            : components.path
+        components.path = basePath + path
         components.query = nil
         components.fragment = nil
         return components.url

@@ -124,7 +124,8 @@ def _server_event_url(raw):
     scheme = scheme_map.get(parsed.scheme)
     if not scheme or not parsed.netloc:
         return None
-    return urlunparse((scheme, parsed.netloc, "/api/event", "", "", ""))
+    base_path = parsed.path.rstrip("/")
+    return urlunparse((scheme, parsed.netloc, base_path + "/api/event", "", "", ""))
 
 
 def _post_event(url, api_key, body, timeout):

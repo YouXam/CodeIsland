@@ -10,6 +10,7 @@ Environment:
 
 - `PORT` or `CODEISLAND_RELAY_PORT`: listen port, default `8787`
 - `CODEISLAND_RELAY_DB`: SQLite database path, default `relay-data/codeisland-relay.sqlite`
+- `CODEISLAND_RELAY_BASE_PATH`: subpath prefix to strip from incoming requests, e.g. `/subpath/relay`
 - `CODEISLAND_RELAY_REQUEST_TIMEOUT_MS`: blocking permission/question timeout, default `300000`
 
 Endpoints:

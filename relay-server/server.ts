@@ -43,6 +43,7 @@ type PendingRequest = {
 const port = Number(process.env.PORT ?? process.env.CODEISLAND_RELAY_PORT ?? "8787");
 const dataFile = resolve(process.env.CODEISLAND_RELAY_DB ?? "relay-data/codeisland-relay.sqlite");
 const requestTimeoutMs = Number(process.env.CODEISLAND_RELAY_REQUEST_TIMEOUT_MS ?? "300000");
+const basePath = (process.env.CODEISLAND_RELAY_BASE_PATH ?? "").replace(/\/+$/, "");
 const resourceDir = resolve(import.meta.dir, "resources");
 
 const corsHeaders = {
@@ -436,12 +437,15 @@ const server = Bun.serve<ClientData>({
   port,
   fetch: async (request, bunServer) => {
     const url = new URL(request.url);
+    const pathname = basePath && url.pathname.startsWith(basePath)
+      ? url.pathname.slice(basePath.length) || "/"
+      : url.pathname;
 
     if (request.method === "OPTIONS") {
       return new Response(null, { status: 204, headers: corsHeaders });
     }
 
-    if (request.method === "GET" && url.pathname === "/health") {
+    if (request.method === "GET" && pathname === "/health") {
       return jsonResponse({
         ok: true,
         viewers: [...viewersByKey.values()].reduce((total, set) => total + set.size, 0),
@@ -449,15 +453,15 @@ const server = Bun.serve<ClientData>({
       });
     }
 
-    if (request.method === "GET" && url.pathname === "/resources/install.sh") {
+    if (request.method === "GET" && pathname === "/resources/install.sh") {
       return resourceResponse("install.sh", "text/x-shellscript; charset=utf-8");
     }
 
-    if (request.method === "GET" && url.pathname === "/resources/codeisland-relay-hook.py") {
+    if (request.method === "GET" && pathname === "/resources/codeisland-relay-hook.py") {
       return resourceResponse("codeisland-relay-hook.py", "text/x-python; charset=utf-8");
     }
 
-    if (request.method === "POST" && url.pathname === "/api/register") {
+    if (request.method === "POST" && pathname === "/api/register") {
       const body = await request.json().catch(() => ({}));
       const user: StoredUser = {
         apiKey: apiKey(),
@@ -470,11 +474,11 @@ const server = Bun.serve<ClientData>({
       return jsonResponse({ apiKey: user.apiKey });
     }
 
-    if (request.method === "POST" && url.pathname === "/api/event") {
+    if (request.method === "POST" && pathname === "/api/event") {
       return await handleHttpEvent(request);
     }
 
-    if (request.method === "GET" && url.pathname === "/ws") {
+    if (request.method === "GET" && pathname === "/ws") {
       const upgraded = bunServer.upgrade(request, { data: {} });
       if (upgraded) return undefined;
       return new Response("upgrade failed", { status: 400 });
@@ -523,3 +527,4 @@ const server = Bun.serve<ClientData>({
 
 console.log(`CodeIsland relay listening on http://localhost:${server.port}`);
 console.log(`Database: ${dataFile}`);
+if (basePath) console.log(`Base path: ${basePath}`);
