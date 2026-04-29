@@ -346,7 +346,7 @@ final class L10n: ObservableObject {
         "submit": "SUBMIT",
         "open_path": "Open",
         "copy_session_id": "Copy session ID",
-        "clear_session": "Clear Session",
+        "clear_session": "Remove This Session",
 
         // Session grouping
         "status_running": "Running",
@@ -668,7 +668,7 @@ final class L10n: ObservableObject {
         "submit": "提交",
         "open_path": "打开",
         "copy_session_id": "复制会话 ID",
-        "clear_session": "清除会话",
+        "clear_session": "移除此会话",
 
         // Session grouping
         "status_running": "运行中",
@@ -990,7 +990,7 @@ final class L10n: ObservableObject {
         "submit": "送信",
         "open_path": "開く",
         "copy_session_id": "セッション ID をコピー",
-        "clear_session": "セッションを消去",
+        "clear_session": "このセッションを削除",
 
         // Session grouping
         "status_running": "実行中",
@@ -1312,7 +1312,7 @@ final class L10n: ObservableObject {
         "submit": "제출",
         "open_path": "열기",
         "copy_session_id": "세션 ID 복사",
-        "clear_session": "세션 지우기",
+        "clear_session": "이 세션 제거",
 
         // Session grouping
         "status_running": "실행 중",
@@ -1634,7 +1634,7 @@ final class L10n: ObservableObject {
         "submit": "GÖNDER",
         "open_path": "Aç",
         "copy_session_id": "Oturum ID Kopyala",
-        "clear_session": "Oturumu Temizle",
+        "clear_session": "Bu Oturumu Kaldır",
 
         // Session grouping
         "status_running": "Çalışıyor",
