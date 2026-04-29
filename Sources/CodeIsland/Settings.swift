@@ -34,6 +34,8 @@ enum SettingsKey {
     static let collapseOnMouseLeave = "collapseOnMouseLeave"
     static let autoCollapseAfterSessionJump = "autoCollapseAfterSessionJump"
     static let hoverExpandDelay = "hoverExpandDelay"     // seconds (0.0–1.0, default 0.5)
+    static let autoExpandOnCompletion = "autoExpandOnCompletion"
+    static let pluginSessionMode = "pluginSessionMode"  // "separate" | "merge" | "hide"
     static let hapticOnHover = "hapticOnHover"
     static let hapticIntensity = "hapticIntensity"      // 1=light, 2=medium, 3=strong
     static let sessionTimeout = "sessionTimeout"
@@ -123,6 +125,8 @@ struct SettingsDefaults {
     static let collapseOnMouseLeave = true
     static let autoCollapseAfterSessionJump = false
     static let hoverExpandDelay = 0.5       // seconds
+    static let autoExpandOnCompletion = true
+    static let pluginSessionMode = "separate"
     static let hapticOnHover = false
     static let hapticIntensity = 1          // 1=light
     static let sessionTimeout = 30
@@ -165,7 +169,11 @@ struct SettingsDefaults {
     static let selectedBuddyIdentifier = ""
     static let selectedBuddyName = ""
 
-    static let autoApproveTools = "TaskCreate,TaskUpdate,TaskGet,TaskList,TaskOutput,TaskStop,TodoRead,TodoWrite,EnterPlanMode"
+    // Default to no auto-approval — every tool call goes through the
+    // approval flow and the user opts in per tool. The previous default
+    // silently approved 9 internal agent tools (TaskCreate, TodoWrite,
+    // EnterPlanMode etc.) which hid those calls from the panel.
+    static let autoApproveTools = ""
 
     static let excludedHookCwdSubstrings = ""
 
@@ -197,6 +205,8 @@ class SettingsManager {
             SettingsKey.collapseOnMouseLeave: SettingsDefaults.collapseOnMouseLeave,
             SettingsKey.autoCollapseAfterSessionJump: SettingsDefaults.autoCollapseAfterSessionJump,
             SettingsKey.hoverExpandDelay: SettingsDefaults.hoverExpandDelay,
+            SettingsKey.autoExpandOnCompletion: SettingsDefaults.autoExpandOnCompletion,
+            SettingsKey.pluginSessionMode: SettingsDefaults.pluginSessionMode,
             SettingsKey.hapticOnHover: SettingsDefaults.hapticOnHover,
             SettingsKey.hapticIntensity: SettingsDefaults.hapticIntensity,
             SettingsKey.sessionTimeout: SettingsDefaults.sessionTimeout,

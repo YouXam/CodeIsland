@@ -694,14 +694,14 @@ private struct ApprovalToolDetailView: View {
                             Text(cmd)
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(maxLines ?? 3)
+                                .lineLimit(maxLines)
                         }
                     }
                     if let desc = toolInput?["description"] as? String, !desc.isEmpty {
                         Text(desc)
                             .font(.system(size: 9.5, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.55))
-                            .lineLimit(maxLines ?? 2)
+                            .lineLimit(maxLines)
                     }
                 }
 
@@ -1945,7 +1945,16 @@ private struct SessionCard: View {
                         ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                             HStack(spacing: 1) {
                                 ForEach(row, id: \.agentId) { sub in
+                                    let typeLabel = sub.agentType.isEmpty ? "Subagent" : sub.agentType
+                                    let tool = sub.currentTool.flatMap { $0.isEmpty ? nil : $0 }
+                                    let desc = sub.toolDescription.flatMap { $0.isEmpty ? nil : $0 }
+                                    let detail: String? = {
+                                        if let tool, let desc { return "\(tool) \(desc)" }
+                                        return tool
+                                    }()
+                                    let tooltip = detail.map { "\(typeLabel) — \($0)" } ?? typeLabel
                                     MiniAgentIcon(active: sub.status != .idle, size: 8)
+                                        .help(tooltip)
                                 }
                             }
                         }
@@ -1970,6 +1979,9 @@ private struct SessionCard: View {
                     Spacer(minLength: 8)
 
                     HStack(spacing: 4) {
+                        if !session.subagents.isEmpty {
+                            SessionTag("+\(session.subagents.count) Sub", color: Color(red: 0.65, green: 0.55, blue: 0.95))
+                        }
                         if session.interrupted {
                             SessionTag("INT", color: Color(red: 1.0, green: 0.6, blue: 0.2))
                         }

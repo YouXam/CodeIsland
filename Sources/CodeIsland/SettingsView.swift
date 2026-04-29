@@ -535,6 +535,8 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
     @AppStorage(SettingsKey.collapseOnMouseLeave) private var collapseOnMouseLeave = SettingsDefaults.collapseOnMouseLeave
     @AppStorage(SettingsKey.autoCollapseAfterSessionJump) private var autoCollapseAfterSessionJump = SettingsDefaults.autoCollapseAfterSessionJump
+    @AppStorage(SettingsKey.autoExpandOnCompletion) private var autoExpandOnCompletion = SettingsDefaults.autoExpandOnCompletion
+    @AppStorage(SettingsKey.pluginSessionMode) private var pluginSessionMode = SettingsDefaults.pluginSessionMode
     @AppStorage(SettingsKey.hapticOnHover) private var hapticOnHover = SettingsDefaults.hapticOnHover
     @AppStorage(SettingsKey.hapticIntensity) private var hapticIntensity = SettingsDefaults.hapticIntensity
     @AppStorage(SettingsKey.hoverExpandDelay) private var hoverExpandDelay = SettingsDefaults.hoverExpandDelay
@@ -591,6 +593,12 @@ private struct BehaviorPage: View {
                     desc: l10n["auto_collapse_after_session_jump_desc"],
                     isOn: $autoCollapseAfterSessionJump,
                     animation: .clickJumpCollapse
+                )
+                BehaviorToggleRow(
+                    title: l10n["auto_expand_on_completion"],
+                    desc: l10n["auto_expand_on_completion_desc"],
+                    isOn: $autoExpandOnCompletion,
+                    animation: .smartSuppress
                 )
                 BehaviorToggleRow(
                     title: l10n["haptic_on_hover"],
@@ -703,6 +711,14 @@ private struct BehaviorPage: View {
                 } label: {
                     Text(l10n["tool_history_limit"])
                     Text(l10n["tool_history_limit_desc"])
+                }
+                Picker(selection: $pluginSessionMode) {
+                    Text(l10n["plugin_session_mode_separate"]).tag("separate")
+                    Text(l10n["plugin_session_mode_merge"]).tag("merge")
+                    Text(l10n["plugin_session_mode_hide"]).tag("hide")
+                } label: {
+                    Text(l10n["plugin_session_mode"])
+                    Text(l10n["plugin_session_mode_desc"])
                 }
             }
         }

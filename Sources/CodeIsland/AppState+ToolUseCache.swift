@@ -52,6 +52,10 @@ extension AppState {
         guard let staleIndex = permissionQueue.firstIndex(where: { $0.toolUseId == toolUseId })
         else { return }
 
+        if shouldKeepQueuedPermissionForCompletedEvent(event, normalizedEventName: normalized) {
+            return
+        }
+
         let stale = permissionQueue.remove(at: staleIndex)
         let denyBody = #"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny"}}}"#
         stale.continuation.resume(returning: Data(denyBody.utf8))
@@ -93,6 +97,21 @@ extension AppState {
         existing.continuation.resume(returning: Data(denyBody.utf8))
         permissionQueue[existingIndex] = request
         return true
+    }
+
+    func shouldKeepQueuedPermissionForCompletedEvent(_ event: HookEvent, normalizedEventName: String) -> Bool {
+        guard normalizedEventName != "PermissionDenied" else { return false }
+
+        let source = SessionSnapshot.normalizedSupportedSource(event.rawJSON["_source"] as? String)
+            ?? permissionQueue.first(where: { $0.toolUseId == event.toolUseId })
+                .flatMap { SessionSnapshot.normalizedSupportedSource($0.event.rawJSON["_source"] as? String) }
+
+        switch source {
+        case "trae", "traecn", "traecli":
+            return true
+        default:
+            return false
+        }
     }
 
     /// Backfill tool metadata from the cached PreToolUse when the PermissionRequest

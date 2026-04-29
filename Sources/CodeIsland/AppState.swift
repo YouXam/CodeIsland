@@ -15,10 +15,59 @@ struct ProcessIdentity: Equatable {
 @MainActor
 @Observable
 final class AppState {
+    /// Snapshot of a hook event accepted by HookServer, kept for diagnostics
+    /// export (#103). Stored in a fixed-size ring so we can attach the recent
+    /// hook stream to bug reports without pulling in full payloads.
+    ///
+    /// `payloadKeys` lists the top-level JSON field names the hook arrived
+    /// with (sorted, no values), and `promptPreview` is a 80-char prefix of
+    /// any extracted user prompt. Together those let us tell at a glance
+    /// whether a hook fired with an empty / missing prompt vs. fired with a
+    /// prompt that the UI then dropped.
+    struct DiagnosticHookEvent: Sendable {
+        let timestamp: Date
+        let source: String?
+        let sessionId: String?
+        let eventName: String
+        let toolName: String?
+        let viaPlugin: Bool
+        let payloadKeys: [String]
+        let promptPreview: String?
+    }
+
     var sessions: [String: SessionSnapshot] = [:]
     var activeSessionId: String?
     var permissionQueue: [PermissionRequest] = []
     var questionQueue: [QuestionRequest] = []
+
+    @ObservationIgnored
+    private(set) var recentHookEvents: [DiagnosticHookEvent] = []
+    @ObservationIgnored
+    private let maxRecentHookEvents = 100
+
+    func recordHookEvent(
+        source: String?,
+        sessionId: String?,
+        eventName: String,
+        toolName: String?,
+        viaPlugin: Bool,
+        payloadKeys: [String],
+        promptPreview: String?
+    ) {
+        recentHookEvents.append(DiagnosticHookEvent(
+            timestamp: Date(),
+            source: source,
+            sessionId: sessionId,
+            eventName: eventName,
+            toolName: toolName,
+            viaPlugin: viaPlugin,
+            payloadKeys: payloadKeys,
+            promptPreview: promptPreview
+        ))
+        if recentHookEvents.count > maxRecentHookEvents {
+            recentHookEvents.removeFirst(recentHookEvents.count - maxRecentHookEvents)
+        }
+    }
     /// Cache of in-flight PreToolUse records keyed by tool_use_id. Used to correlate
     /// permission requests back to their originating tool call. See AppState+ToolUseCache.
     @ObservationIgnored
@@ -660,6 +709,11 @@ final class AppState {
     }
 
     private func enqueueCompletion(_ sessionId: String) {
+        // Behavior setting (#146): respect "Auto-expand on agent completion".
+        // When disabled the panel stays compact — status indicators still
+        // update, but no completion card pops down.
+        guard UserDefaults.standard.bool(forKey: SettingsKey.autoExpandOnCompletion) else { return }
+
         // Don't queue duplicates
         if completionQueue.contains(sessionId) || justCompletedSessionId == sessionId { return }
 
@@ -766,7 +820,8 @@ final class AppState {
 
     var toolDescription: String? {
         if let pending = pendingPermission {
-            return pending.event.toolDescription
+            let sessionId = pending.event.sessionId ?? activeSessionId ?? "default"
+            return pending.event.toolDescription ?? sessions[sessionId]?.toolDescription
         }
         if let q = pendingQuestion {
             return q.question.question
@@ -848,12 +903,17 @@ final class AppState {
             sessions[sessionId] = SessionSnapshot()
         }
 
+        let normalizedEventName = EventNormalizer.normalize(event.eventName)
         let prevStatus = sessions[sessionId]?.status
         let wasWaiting = prevStatus == .waitingApproval || prevStatus == .waitingQuestion
 
         // Cache PreToolUse payloads so downstream events sharing tool_use_id can be
         // correlated, and drain queue entries whose agent already moved on.
         let permissionCountBefore = permissionQueue.lazy.filter { $0.event.sessionId == sessionId }.count
+        let keepQueuedPermissionForCompletion = shouldKeepQueuedPermissionForCompletedEvent(
+            event,
+            normalizedEventName: normalizedEventName
+        )
         cachePreToolUseIfApplicable(event)
         resolveToolUseIfCompleted(event)
         let permissionCountAfter = permissionQueue.lazy.filter { $0.event.sessionId == sessionId }.count
@@ -876,16 +936,16 @@ final class AppState {
         // sweep so concurrent in-flight tools stay queued (tested by
         // testPostToolUseDoesNotAffectUnrelatedQueueEntries).
         if wasWaiting {
-            let en = EventNormalizer.normalize(event.eventName)
             // Events that should NOT clear waiting state
             let keepWaiting: Set<String> = ["Notification", "SessionStart", "SessionEnd", "PreCompact"]
-            let skipBlanketDrain = surgicallyDrained && permissionCountAfter > 0
-            if !keepWaiting.contains(en) && !skipBlanketDrain {
+            let skipBlanketDrain = (surgicallyDrained && permissionCountAfter > 0)
+                || keepQueuedPermissionForCompletion
+            if !keepWaiting.contains(normalizedEventName) && !skipBlanketDrain {
                 drainPermissions(forSession: sessionId)
                 drainQuestions(forSession: sessionId)
                 if sessions[sessionId]?.status == .waitingApproval
                     || sessions[sessionId]?.status == .waitingQuestion {
-                    sessions[sessionId]?.status = (en == "Stop") ? .idle : .processing
+                    sessions[sessionId]?.status = (normalizedEventName == "Stop") ? .idle : .processing
                     sessions[sessionId]?.currentTool = nil
                     sessions[sessionId]?.toolDescription = nil
                 }
@@ -918,8 +978,7 @@ final class AppState {
         // Handle the "else if activeSessionId == sessionId → mostActive" edge case
         // (reducer can't check activeSessionId since it's AppState-local)
         if sessions[sessionId]?.status == .idle && activeSessionId == sessionId {
-            let eventName = EventNormalizer.normalize(event.eventName)
-            if eventName != "Stop" {
+            if normalizedEventName != "Stop" {
                 activeSessionId = mostActiveSessionId()
             }
         }
@@ -1049,6 +1108,50 @@ final class AppState {
 
         showNextPending()
         refreshDerivedState()
+    }
+
+    func handleBuddyControlCommand(_ command: BuddyControlCommand) {
+        switch command {
+        case .approveCurrentPermission:
+            if !permissionQueue.isEmpty {
+                approvePermission()
+            } else {
+                log.info("Ignored Buddy approve command because permission queue is empty")
+            }
+        case .denyCurrentPermission:
+            if !permissionQueue.isEmpty {
+                denyPermission()
+            } else {
+                log.info("Ignored Buddy deny command because permission queue is empty")
+            }
+        case .skipCurrentQuestion:
+            if !questionQueue.isEmpty {
+                skipQuestion()
+            } else {
+                log.info("Ignored Buddy skip command because question queue is empty")
+            }
+        }
+    }
+
+    /// Find an existing session whose source matches and whose CLI PID equals
+    /// the supplied ppid. Used by HookServer to merge plugin-proxied events
+    /// (e.g. omo) into their main session when pluginSessionMode == "merge". (#123)
+    ///
+    /// We additionally require the candidate session to have been active in
+    /// the last 5 minutes. This guards against macOS PID reuse — a stale
+    /// session whose CLI long since exited could otherwise still match the
+    /// plugin event's `_ppid` if the OS recycled that PID for an unrelated
+    /// process. Live sessions update `lastActivity` on every event so the
+    /// window is generous; stale ones get skipped. (#123 review)
+    func findSessionId(forSource source: String, ppid: Int) -> String? {
+        let normalized = SessionSnapshot.normalizedSupportedSource(source)
+        let cutoff = Date().addingTimeInterval(-300)
+        return sessions.first(where: { _, snap in
+            let snapSource = SessionSnapshot.normalizedSupportedSource(snap.source)
+            return snapSource == normalized
+                && snap.cliPid == pid_t(ppid)
+                && snap.lastActivity >= cutoff
+        })?.key
     }
 
     func denyPermission() {

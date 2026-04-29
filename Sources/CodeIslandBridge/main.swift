@@ -372,9 +372,26 @@ let coreAncestry = ancestry.map { (pid: Int32($0.pid), executablePath: $0.execut
 // one (e.g. the omo OpenCode plugin triggering Claude hooks without --source), infer
 // the real source from the process ancestry so we don't misattribute the event to
 // whichever hook path fired it. See issue #95.
-let effectiveSource = sourceTag ?? CLIProcessResolver.inferSource(ancestry: coreAncestry)
+// Resolve source: explicit --source tag wins, fallback to ancestry inference.
+// In addition, the cursor-agent / qodercli CLIs share their hooks file with
+// the matching desktop IDE, so a `--source cursor` tag from a hook fired by
+// cursor-agent should be promoted to "cursor-cli" (#134). The override only
+// applies when ancestry actually shows a CLI binary.
+let inferredSource = sourceTag ?? CLIProcessResolver.inferSource(ancestry: coreAncestry)
+let cliPromoted = CLIProcessResolver.cliVariantOverride(
+    declaredSource: inferredSource,
+    ancestry: coreAncestry
+)
+let effectiveSource = cliPromoted ?? inferredSource
 if let source = effectiveSource {
     json["_source"] = source
+}
+// Mark events that arrived via a plugin proxy (no explicit --source but
+// ancestry inferred a real source — e.g. the omo OpenCode plugin firing
+// Claude hooks) so the host app can route them per pluginSessionMode.
+// See issue #123.
+if sourceTag == nil && effectiveSource != nil {
+    json["_via_plugin"] = true
 }
 
 let resolvedTrackedPID = CLIProcessResolver.resolvedTrackedPID(
