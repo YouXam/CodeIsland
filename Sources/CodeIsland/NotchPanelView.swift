@@ -2139,6 +2139,11 @@ private struct SessionCard: View {
         .contentShape(Rectangle())
         .onTapGesture { handleSessionClick() }
         .onHover { h in withAnimation(NotchAnimation.micro) { hovering = h } }
+        .contextMenu {
+            Button(L10n.shared["clear_session"]) {
+                appState.dismissSession(sessionId)
+            }
+        }
         .onDisappear {
             jumpValidationTask?.cancel()
             jumpValidationTask = nil

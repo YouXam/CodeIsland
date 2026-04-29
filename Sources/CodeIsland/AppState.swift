@@ -134,6 +134,9 @@ final class AppState {
     private var modelReadRetryAt: [String: Date] = [:]
 
     private var dismissedPermissionSessionIds: Set<String> = []
+    /// Session IDs manually dismissed by the user via the context menu.
+    /// Cleared when a new event arrives for the session so it reappears.
+    private var manuallyDismissedSessionIds: Set<String> = []
     private func nextVisiblePermissionIndex() -> Int? {
         permissionQueue.firstIndex { request in
             let sid = request.event.sessionId ?? "default"
@@ -539,6 +542,12 @@ final class AppState {
         scheduleSave()
     }
 
+    /// Manually dismiss a session from the UI. The session will reappear if new events arrive.
+    func dismissSession(_ sessionId: String) {
+        manuallyDismissedSessionIds.insert(sessionId)
+        removeSession(sessionId)
+    }
+
     // MARK: - Compact bar mascot rotation
 
     /// Cached sorted active session IDs — refreshed by refreshActiveIds()
@@ -895,6 +904,9 @@ final class AppState {
         }
 
         let sessionId = event.sessionId ?? "default"
+
+        // If the user manually dismissed this session, un-dismiss it so it reappears.
+        manuallyDismissedSessionIds.remove(sessionId)
 
         // Skip Codex APP internal sessions (title generation, etc.) — they have no transcript
         if (event.rawJSON["_source"] as? String) == "codex"
