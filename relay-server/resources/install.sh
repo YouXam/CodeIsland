@@ -48,7 +48,10 @@ download() {
 download "$BASE_URL/resources/codeisland-relay-hook.py" "$HOOK_PATH"
 chmod 755 "$HOOK_PATH"
 
-python3 - "$CONFIG_PATH" "$SERVER_URL" "$API_KEY" "$HOST_NAME" "$HOOK_PATH" <<'PY'
+OPENCODE_PLUGIN_PATH="$INSTALL_DIR/codeisland-relay-opencode.js"
+download "$BASE_URL/resources/codeisland-relay-opencode.js" "$OPENCODE_PLUGIN_PATH"
+
+python3 - "$CONFIG_PATH" "$SERVER_URL" "$API_KEY" "$HOST_NAME" "$HOOK_PATH" "$OPENCODE_PLUGIN_PATH" <<'PY'
 import json
 import os
 import pathlib
@@ -62,6 +65,7 @@ server_url = sys.argv[2]
 api_key = sys.argv[3]
 host_name = sys.argv[4]
 hook_path = pathlib.Path(sys.argv[5]).expanduser()
+opencode_plugin_src = pathlib.Path(sys.argv[6]).expanduser()
 home = pathlib.Path.home()
 
 def load_json(path):
@@ -241,6 +245,104 @@ def install_traecli():
     path.write_text(content + "\n" + "\n".join(block) + "\n", encoding="utf-8")
     return "Traecli ok"
 
+def strip_jsonc_comments(text):
+    """Strip // and /* */ comments from JSONC, preserving strings."""
+    result = []
+    i = 0
+    in_string = False
+    while i < len(text):
+        ch = text[i]
+        if in_string:
+            result.append(ch)
+            if ch == "\\" and i + 1 < len(text):
+                i += 1
+                result.append(text[i])
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            result.append(ch)
+            i += 1
+            continue
+        if ch == '/' and i + 1 < len(text):
+            nch = text[i + 1]
+            if nch == '/':
+                # line comment — skip until newline
+                i += 2
+                while i < len(text) and text[i] != '\n':
+                    i += 1
+                continue
+            if nch == '*':
+                # block comment — skip until */
+                i += 2
+                while i < len(text):
+                    if text[i] == '*' and i + 1 < len(text) and text[i + 1] == '/':
+                        i += 2
+                        break
+                    i += 1
+                continue
+        result.append(ch)
+        i += 1
+    return "".join(result)
+
+def install_opencode():
+    oc_dir = home / ".config" / "opencode"
+    if not oc_dir.exists():
+        return "OpenCode skipped"
+    # Copy plugin JS into plugins dir
+    plugin_dir = oc_dir / "plugins"
+    plugin_dest = plugin_dir / "codeisland-relay.js"
+    plugin_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(opencode_plugin_src), str(plugin_dest))
+    # Remove old vibe-island plugin if present
+    old_plugin = plugin_dir / "vibe-island.js"
+    if old_plugin.exists():
+        old_plugin.unlink()
+    # Pick config: prefer opencode.jsonc, then opencode.json
+    jsonc_path = oc_dir / "opencode.jsonc"
+    json_path = oc_dir / "opencode.json"
+    if jsonc_path.exists():
+        cfg_path = jsonc_path
+    else:
+        cfg_path = json_path
+    plugin_ref = f"file://{plugin_dest}"
+    # Load and parse config
+    contents = ""
+    if cfg_path.exists():
+        contents = cfg_path.read_text(encoding="utf-8")
+    stripped = strip_jsonc_comments(contents) if contents else ""
+    try:
+        data = json.loads(stripped) if stripped.strip() else {}
+        if not isinstance(data, dict):
+            data = {}
+    except Exception:
+        # Unparseable config — do not overwrite (safety)
+        return "OpenCode config error"
+    plugins = data.get("plugin", [])
+    if not isinstance(plugins, list):
+        plugins = []
+    plugins = [p for p in plugins if isinstance(p, str) and "codeisland" not in p and "vibe-island" not in p]
+    plugins.append(plugin_ref)
+    data["plugin"] = plugins
+    if "$schema" not in data:
+        data["$schema"] = "https://opencode.ai/config.json"
+    cfg_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    # Clean up legacy config.json to prevent double-load
+    legacy_cfg = oc_dir / "config.json"
+    if legacy_cfg.exists() and cfg_path != legacy_cfg:
+        try:
+            ldata = json.loads(strip_jsonc_comments(legacy_cfg.read_text(encoding="utf-8")))
+            if isinstance(ldata, dict) and isinstance(ldata.get("plugin"), list):
+                ldata["plugin"] = [p for p in ldata["plugin"] if isinstance(p, str) and "codeisland" not in p]
+                if not ldata["plugin"]:
+                    del ldata["plugin"]
+                legacy_cfg.write_text(json.dumps(ldata, indent=2) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+    return "OpenCode ok"
+
 results = []
 results.append(install_json_hooks(
     "Claude",
@@ -293,6 +395,7 @@ results.append(install_json_hooks(
     requires_binary="gemini",
 ))
 results.append(install_traecli())
+results.append(install_opencode())
 
 print("Config:", config_path)
 print("Hook:", hook_path)

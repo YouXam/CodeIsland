@@ -461,6 +461,10 @@ const server = Bun.serve<ClientData>({
       return resourceResponse("codeisland-relay-hook.py", "text/x-python; charset=utf-8");
     }
 
+    if (request.method === "GET" && pathname === "/resources/codeisland-relay-opencode.js") {
+      return resourceResponse("codeisland-relay-opencode.js", "text/javascript; charset=utf-8");
+    }
+
     if (request.method === "POST" && pathname === "/api/register") {
       const body = await request.json().catch(() => ({}));
       const user: StoredUser = {
