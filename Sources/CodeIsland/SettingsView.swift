@@ -546,6 +546,7 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.webhookEnabled) private var webhookEnabled: Bool = SettingsDefaults.webhookEnabled
     @AppStorage(SettingsKey.webhookURL) private var webhookURL: String = SettingsDefaults.webhookURL
     @AppStorage(SettingsKey.webhookEventFilter) private var webhookEventFilter: String = SettingsDefaults.webhookEventFilter
+    @AppStorage(SettingsKey.webhookSuppressWhenActive) private var webhookSuppressWhenActive: Bool = SettingsDefaults.webhookSuppressWhenActive
 
     private func autoApproveBinding(for name: String) -> Binding<Bool> {
         Binding(
@@ -665,6 +666,10 @@ private struct BehaviorPage: View {
                         .font(.system(size: 12, design: .monospaced))
                         .autocorrectionDisabled(true)
                     Text(l10n["webhook_filter_hint"])
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle(l10n["webhook_suppress_when_active"], isOn: $webhookSuppressWhenActive)
+                    Text(l10n["webhook_suppress_when_active_desc"])
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

@@ -104,6 +104,7 @@ enum SettingsKey {
     static let webhookEnabled = "webhookEnabled"
     static let webhookURL = "webhookURL"
     static let webhookEventFilter = "webhookEventFilter"  // comma-separated allow-list; empty = forward all
+    static let webhookSuppressWhenActive = "webhookSuppressWhenActive"  // skip webhook when sound is on and screen is unlocked
 
     // Relay server: WebSocket bridge for remote hosts that cannot use SSH forwarding
     static let relayServerURL = "relayServerURL"
@@ -171,6 +172,7 @@ struct SettingsDefaults {
     static let webhookEnabled = false
     static let webhookURL = ""
     static let webhookEventFilter = ""
+    static let webhookSuppressWhenActive = false
 
     static let relayServerURL = ""
     static let relayAPIKey = ""
