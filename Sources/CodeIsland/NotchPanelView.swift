@@ -324,8 +324,11 @@ private struct CompactLeftWing: View {
         return appState.sessions[sid]
     }
     private var displaySource: String {
+        // Honor user's configured default mascot whenever nothing is actively
+        // happening. Covers no-session and all-idle equally (#149) — without
+        // this, an idle session's source overrides the user preference.
+        if displayStatus == .idle { return settingsDefaultSource }
         if let s = displaySession?.source { return s }
-        if appState.totalSessionCount == 0 { return settingsDefaultSource }
         return appState.primarySource
     }
     private var displayStatus: AgentStatus { displaySession?.status ?? .idle }
