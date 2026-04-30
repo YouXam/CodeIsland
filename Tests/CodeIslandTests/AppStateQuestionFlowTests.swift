@@ -354,4 +354,126 @@ final class AppStateQuestionFlowTests: XCTestCase {
         let decision = try XCTUnwrap(hookSpecificOutput["decision"] as? [String: Any])
         return try XCTUnwrap(decision["behavior"] as? String)
     }
+
+    // MARK: - Dismiss question tests
+
+    func testDismissQuestionCollapsesAndKeepsPending() async throws {
+        let appState = AppState()
+        let sessionId = "s-dismiss"
+        let event = try makeAskUserQuestionEvent(
+            sessionId: sessionId,
+            questions: [
+                question(header: "Q1", text: "Some question?", options: ["A", "B"]),
+            ]
+        )
+
+        let responseTask = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.surface, .questionCard(sessionId: sessionId))
+        XCTAssertEqual(appState.questionQueue.count, 1)
+        XCTAssertEqual(appState.sessions[sessionId]?.status, .waitingQuestion)
+
+        appState.dismissQuestion()
+
+        XCTAssertEqual(appState.surface, .collapsed)
+        XCTAssertEqual(appState.questionQueue.count, 1)
+        XCTAssertEqual(appState.sessions[sessionId]?.status, .waitingQuestion)
+        XCTAssertTrue(appState.hasDismissedQuestions)
+
+        await assertTaskNotResolved(responseTask)
+
+        appState.handlePeerDisconnect(sessionId: sessionId)
+        let response = await responseTask.value
+        XCTAssertEqual(try extractPermissionBehavior(from: response), "deny")
+    }
+
+    func testRestoreDismissedQuestion() async throws {
+        let appState = AppState()
+        let sessionId = "s-restore"
+        let event = try makeAskUserQuestionEvent(
+            sessionId: sessionId,
+            questions: [
+                question(header: "Q1", text: "Restore me?", options: ["A", "B"]),
+            ]
+        )
+
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        appState.dismissQuestion()
+        XCTAssertEqual(appState.surface, .collapsed)
+        XCTAssertTrue(appState.hasDismissedQuestions)
+
+        appState.restoreDismissedQuestion()
+        XCTAssertEqual(appState.surface, .questionCard(sessionId: sessionId))
+        XCTAssertFalse(appState.hasDismissedQuestions)
+        XCTAssertEqual(appState.questionQueue.count, 1)
+    }
+
+    func testDismissedQuestionReappearsOnNewEvent() async throws {
+        let appState = AppState()
+        let sessionId = "s-reappear-q"
+        let event1 = try makeAskUserQuestionEvent(
+            sessionId: sessionId,
+            questions: [
+                question(header: "Q1", text: "First question?", options: ["A", "B"]),
+            ]
+        )
+
+        let responseTask1 = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event1, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        appState.dismissQuestion()
+        XCTAssertEqual(appState.surface, .collapsed)
+        XCTAssertTrue(appState.hasDismissedQuestions)
+
+        // Disconnect drains the first question
+        appState.handlePeerDisconnect(sessionId: sessionId)
+        _ = await responseTask1.value
+        XCTAssertEqual(appState.questionQueue.count, 0)
+        XCTAssertFalse(appState.hasDismissedQuestions)
+
+        // New question for same session should appear normally
+        let event2 = try makeAskUserQuestionEvent(
+            sessionId: sessionId,
+            questions: [
+                question(header: "Q2", text: "Second question?", options: ["C", "D"]),
+            ]
+        )
+
+        _ = Task<Data, Never> {
+            await withCheckedContinuation { continuation in
+                appState.handleAskUserQuestion(event2, continuation: continuation)
+            }
+        }
+
+        await Task.yield()
+        XCTAssertEqual(appState.surface, .questionCard(sessionId: sessionId))
+        XCTAssertFalse(appState.hasDismissedQuestions)
+    }
+
+    private func assertTaskNotResolved(_ task: Task<Data, Never>, timeout: TimeInterval = 0.05) async {
+        let exp = expectation(description: "task should stay pending")
+        exp.isInverted = true
+
+        Task {
+            _ = await task.value
+            exp.fulfill()
+        }
+
+        await fulfillment(of: [exp], timeout: timeout)
+    }
 }

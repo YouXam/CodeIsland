@@ -134,6 +134,7 @@ final class AppState {
     private var modelReadRetryAt: [String: Date] = [:]
 
     private var dismissedPermissionSessionIds: Set<String> = []
+    private var dismissedQuestionSessionIds: Set<String> = []
     /// Session IDs manually dismissed by the user via the context menu.
     /// Cleared when a new event arrives for the session so it reappears.
     private var manuallyDismissedSessionIds: Set<String> = []
@@ -141,6 +142,18 @@ final class AppState {
         permissionQueue.firstIndex { request in
             let sid = request.event.sessionId ?? "default"
             return !dismissedPermissionSessionIds.contains(sid)
+        }
+    }
+    private func nextVisibleQuestionIndex() -> Int? {
+        questionQueue.firstIndex { request in
+            let sid = request.event.sessionId ?? "default"
+            return !dismissedQuestionSessionIds.contains(sid)
+        }
+    }
+    var hasDismissedQuestions: Bool {
+        !dismissedQuestionSessionIds.isEmpty && questionQueue.contains { request in
+            let sid = request.event.sessionId ?? "default"
+            return dismissedQuestionSessionIds.contains(sid)
         }
     }
 
@@ -1210,6 +1223,7 @@ final class AppState {
         }
         extractMetadata(into: &sessions, sessionId: sessionId, event: event)
         tryMonitorSession(sessionId)
+        dismissedQuestionSessionIds.remove(sessionId)
 
         guard let question = QuestionPayload.from(event: event) else {
             continuation.resume(returning: Data("{}".utf8))
@@ -1240,6 +1254,7 @@ final class AppState {
         }
         extractMetadata(into: &sessions, sessionId: sessionId, event: event)
         tryMonitorSession(sessionId)
+        dismissedQuestionSessionIds.remove(sessionId)
 
         var askItems: [AskUserQuestionItem] = []
         if let questions = event.toolInput?["questions"] as? [[String: Any]] {
@@ -1436,6 +1451,46 @@ final class AppState {
         refreshDerivedState()
     }
 
+    func dismissQuestion() {
+        guard let pending = questionQueue.first else { return }
+
+        let sessionId = pending.event.sessionId ?? "default"
+        dismissedQuestionSessionIds.insert(sessionId)
+
+        if nextVisibleQuestionIndex() != nil {
+            showNextPending()
+        } else {
+            if case .questionCard = surface {
+                withAnimation(NotchAnimation.close) {
+                    surface = .collapsed
+                }
+            }
+        }
+        refreshDerivedState()
+    }
+
+    func restoreDismissedQuestion() {
+        guard let idx = questionQueue.firstIndex(where: { request in
+            let sid = request.event.sessionId ?? "default"
+            return dismissedQuestionSessionIds.contains(sid)
+        }) else { return }
+
+        let request = questionQueue[idx]
+        let sessionId = request.event.sessionId ?? "default"
+        dismissedQuestionSessionIds.remove(sessionId)
+
+        if idx != 0 {
+            questionQueue.remove(at: idx)
+            questionQueue.insert(request, at: 0)
+        }
+
+        activeSessionId = sessionId
+        withAnimation(NotchAnimation.open) {
+            surface = .questionCard(sessionId: sessionId)
+        }
+        refreshDerivedState()
+    }
+
     /// Drain all queued permissions for a specific session, resuming their continuations with deny
     private func drainPermissions(forSession sessionId: String, reason: String = "unknown") {
         dismissedPermissionSessionIds.remove(sessionId)
@@ -1479,6 +1534,7 @@ final class AppState {
         guard !affectedSessionIds.isEmpty else { return }
         for sessionId in affectedSessionIds {
             dismissedPermissionSessionIds.remove(sessionId)
+            dismissedQuestionSessionIds.remove(sessionId)
             if sessions[sessionId]?.status == .waitingApproval || sessions[sessionId]?.status == .waitingQuestion {
                 sessions[sessionId]?.status = .processing
                 sessions[sessionId]?.currentTool = nil
@@ -1510,6 +1566,7 @@ final class AppState {
     /// Drain all queued questions for a specific session.
     /// AskUserQuestion-derived requests are denied; notification questions return empty.
     private func drainQuestions(forSession sessionId: String, reason: String = "unknown") {
+        dismissedQuestionSessionIds.remove(sessionId)
         questionQueue.removeAll { item in
             guard item.event.sessionId == sessionId else { return false }
             if item.isFromPermission {
@@ -1537,7 +1594,9 @@ final class AppState {
                 surface = .approvalCard(sessionId: sid)
             }
             return true
-        } else if let next = questionQueue.first {
+        } else if let qIdx = nextVisibleQuestionIndex() {
+            let next = questionQueue.remove(at: qIdx)
+            questionQueue.insert(next, at: 0)
             let sid = next.event.sessionId ?? "default"
             activeSessionId = sid
             surface = .questionCard(sessionId: sid)

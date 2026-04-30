@@ -141,7 +141,8 @@ struct NotchPanelView: View {
                                 queueTotal: appState.questionQueue.count,
                                 onAnswer: { appState.answerQuestion($0) },
                                 onAnswerMulti: { appState.answerQuestionMulti($0) },
-                                onSkip: { appState.skipQuestion() }
+                                onSkip: { appState.skipQuestion() },
+                                onDismiss: { appState.dismissQuestion() }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         } else if let preview = appState.previewQuestionPayload {
@@ -156,7 +157,8 @@ struct NotchPanelView: View {
                                 queueTotal: 1,
                                 onAnswer: { _ in },
                                 onAnswerMulti: { _ in },
-                                onSkip: { }
+                                onSkip: { },
+                                onDismiss: { }
                             )
                             .transition(.blurFade.combined(with: .scale(scale: 0.96, anchor: .top)))
                         }
@@ -435,8 +437,17 @@ private struct CompactRightWing: View {
                     NSApplication.shared.terminate(nil)
                 }
             } else {
-                // Pending approval/question badge
-                if appState.status == .waitingApproval || appState.status == .waitingQuestion {
+                // Dismissed question re-expand badge
+                if appState.hasDismissedQuestions {
+                    Button(action: { appState.restoreDismissedQuestion() }) {
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(Color(red: 0.4, green: 0.7, blue: 1.0))
+                            .symbolEffect(.pulse, options: .repeating)
+                    }
+                    .buttonStyle(.plain)
+                } else if appState.status == .waitingApproval || appState.status == .waitingQuestion {
+                    // Pending approval/question badge
                     Image(systemName: "bell.fill")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Color(red: 1.0, green: 0.7, blue: 0.28))
@@ -1023,6 +1034,7 @@ private struct QuestionBar: View {
     let onAnswer: (String) -> Void
     let onAnswerMulti: ([(question: String, answer: String)]) -> Void
     let onSkip: () -> Void
+    let onDismiss: () -> Void
 
     @State private var textInput = ""
     @FocusState private var isFocused: Bool
@@ -1217,6 +1229,13 @@ private struct QuestionBar: View {
                 border: Color.white.opacity(0.12),
                 action: onSkip
             )
+            PixelButton(
+                label: L10n.shared["dismiss"],
+                fg: .white.opacity(0.95),
+                bg: Color(red: 0.25, green: 0.25, blue: 0.25),
+                border: Color.white.opacity(0.28),
+                action: onDismiss
+            )
             if item.multiSelect {
                 PixelButton(
                     label: L10n.shared["confirm"],
@@ -1378,6 +1397,13 @@ private struct QuestionBar: View {
                 bg: Color.white.opacity(0.06),
                 border: Color.white.opacity(0.12),
                 action: onSkip
+            )
+            PixelButton(
+                label: L10n.shared["dismiss"],
+                fg: .white.opacity(0.95),
+                bg: Color(red: 0.25, green: 0.25, blue: 0.25),
+                border: Color.white.opacity(0.28),
+                action: onDismiss
             )
             if options == nil || options?.isEmpty == true {
                 PixelButton(
@@ -1895,6 +1921,9 @@ private struct SessionCard: View {
         appState.permissionQueue.firstIndex { ($0.event.sessionId ?? "default") == sessionId }
     }
     private var isActiveApproval: Bool { approvalQueueIndex == 0 }
+    private var questionQueueIndex: Int? {
+        appState.questionQueue.firstIndex { ($0.event.sessionId ?? "default") == sessionId }
+    }
     private var statusNameColor: Color {
         if session.status == .idle && session.interrupted {
             return Color(red: 1.0, green: 0.45, blue: 0.35)
@@ -2074,6 +2103,36 @@ private struct SessionCard: View {
                                             .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
                                     )
                             )
+                    }
+                }
+
+                // Inline question controls (when question is dismissed but still pending)
+                if session.status == .waitingQuestion, let qIdx = questionQueueIndex {
+                    let questionText = appState.questionQueue[qIdx].question.question
+                    HStack(spacing: 8) {
+                        Image(systemName: "questionmark.circle.fill")
+                            .font(.system(size: max(10, fontSize - 1), weight: .bold))
+                            .foregroundStyle(Color(red: 0.4, green: 0.7, blue: 1.0))
+                        Text(questionText)
+                            .font(.system(size: max(10, fontSize - 1), design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.65))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 8)
+                        inlineActionButton(
+                            L10n.shared["view_question"],
+                            fg: .white,
+                            bg: Color(red: 0.2, green: 0.45, blue: 0.75),
+                            enabled: true,
+                            action: { appState.restoreDismissedQuestion() }
+                        )
+                        inlineActionButton(
+                            L10n.shared["skip"],
+                            fg: .white,
+                            bg: Color(red: 0.85, green: 0.3, blue: 0.3),
+                            enabled: true,
+                            action: { appState.skipQuestion() }
+                        )
                     }
                 }
 
