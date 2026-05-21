@@ -969,14 +969,31 @@ final class AppState {
         //
         // The right signal that a specific permission is moot is its tool_use_id
         // showing up in PostToolUse / PostToolUseFailure / PermissionDenied —
-        // resolveToolUseIfCompleted already does that surgically above. We keep
-        // the question-queue drain (questions don't carry tool_use_id reliably
-        // and are rare enough that a blanket sweep is acceptable) and refresh
-        // session status, but never drain unrelated permission requests.
+        // resolveToolUseIfCompleted already does that surgically above. We also
+        // drain permissions when the agent has clearly moved on: a PreToolUse for
+        // a *different* tool_use_id means the agent started a new tool invocation,
+        // so any stale permissions for that session (whose tool_use_id didn't match)
+        // are moot — the user must have answered in the terminal.
         if wasWaiting {
             let keepWaiting: Set<String> = ["Notification", "SessionStart", "SessionEnd", "PreCompact"]
             if !keepWaiting.contains(normalizedEventName) {
                 drainQuestions(forSession: sessionId, reason: "wasWaiting-blanket-drain-event=\(normalizedEventName)")
+
+                // Drain stale permissions when the agent moved on. Signals:
+                // - PreToolUse with a different tool_use_id (agent started next tool)
+                // - PostToolUse/Stop without tool_use_id match (resolveToolUseIfCompleted
+                //   didn't fire, but activity proves the permission was answered externally)
+                let agentMovedOn: Set<String> = ["PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"]
+                if agentMovedOn.contains(normalizedEventName) {
+                    let currentToolUseId = event.toolUseId
+                    let stalePermissions = permissionQueue.filter {
+                        $0.event.sessionId == sessionId && $0.toolUseId != currentToolUseId
+                    }
+                    if !stalePermissions.isEmpty {
+                        drainPermissions(forSession: sessionId, reason: "wasWaiting-agentMovedOn-event=\(normalizedEventName)")
+                    }
+                }
+
                 let stillHasPermission = permissionQueue.contains { $0.event.sessionId == sessionId }
                 let stillHasQuestion = questionQueue.contains { $0.event.sessionId == sessionId }
                 if !stillHasPermission && !stillHasQuestion,
