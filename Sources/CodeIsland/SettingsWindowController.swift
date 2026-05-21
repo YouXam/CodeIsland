@@ -5,6 +5,7 @@ import SwiftUI
 class SettingsWindowController {
     static let shared = SettingsWindowController()
     private var window: NSWindow?
+    weak var appState: AppState?
 
     private var closeObserver: NSObjectProtocol?
 
@@ -26,6 +27,7 @@ class SettingsWindowController {
             NSApp.activate(ignoringOtherApps: true)
             return
         }
+
 
         let screen = NSScreen.main ?? NSScreen.screens.first
         let screenW = screen?.frame.width ?? 1440

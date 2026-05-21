@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import UniformTypeIdentifiers
 import AppKit
 import CodeIslandCore
@@ -65,6 +66,7 @@ private let sidebarGroups: [SidebarGroup] = [
 struct SettingsView: View {
     @ObservedObject private var l10n = L10n.shared
     @State private var selectedPage: SettingsPage = .general
+    var appState: AppState?
 
     var body: some View {
         NavigationSplitView {
@@ -88,7 +90,7 @@ struct SettingsView: View {
             Group {
                 switch selectedPage {
                 case .general: GeneralPage()
-                case .behavior: BehaviorPage()
+                case .behavior: BehaviorPage(appState: appState)
                 case .appearance: AppearancePage()
                 case .mascots: MascotsPage()
                 case .sound: SoundPage()
@@ -530,6 +532,8 @@ private struct GeneralPage: View {
 
 private struct BehaviorPage: View {
     @ObservedObject private var l10n = L10n.shared
+    var appState: AppState?
+
     @AppStorage(SettingsKey.hideInFullscreen) private var hideInFullscreen = SettingsDefaults.hideInFullscreen
     @AppStorage(SettingsKey.hideWhenNoSession) private var hideWhenNoSession = SettingsDefaults.hideWhenNoSession
     @AppStorage(SettingsKey.smartSuppress) private var smartSuppress = SettingsDefaults.smartSuppress
@@ -549,6 +553,17 @@ private struct BehaviorPage: View {
     @AppStorage(SettingsKey.webhookURL) private var webhookURL: String = SettingsDefaults.webhookURL
     @AppStorage(SettingsKey.webhookEventFilter) private var webhookEventFilter: String = SettingsDefaults.webhookEventFilter
     @AppStorage(SettingsKey.webhookSuppressWhenActive) private var webhookSuppressWhenActive: Bool = SettingsDefaults.webhookSuppressWhenActive
+
+    private var pluginSessionModeBinding: Binding<String> {
+        Binding(
+            get: { pluginSessionMode },
+            set: { newMode in
+                guard pluginSessionMode != newMode else { return }
+                pluginSessionMode = newMode
+                appState?.applyCurrentPluginSessionMode()
+            }
+        )
+    }
 
     private func autoApproveBinding(for name: String) -> Binding<Bool> {
         Binding(
@@ -712,7 +727,7 @@ private struct BehaviorPage: View {
                     Text(l10n["tool_history_limit"])
                     Text(l10n["tool_history_limit_desc"])
                 }
-                Picker(selection: $pluginSessionMode) {
+                Picker(selection: pluginSessionModeBinding) {
                     Text(l10n["plugin_session_mode_separate"]).tag("separate")
                     Text(l10n["plugin_session_mode_merge"]).tag("merge")
                     Text(l10n["plugin_session_mode_hide"]).tag("hide")
@@ -1191,6 +1206,7 @@ private struct MascotsPage: View {
         ("QwenBot", "qwen", "Qwen Code", Color(red: 0.486, green: 0.228, blue: 0.929)),
         ("KimiBot", "kimi", "Kimi Code CLI", Color(red: 0.29, green: 0.56, blue: 1.0)),
         ("OpBot", "opencode", "OpenCode", Color(red: 0.55, green: 0.55, blue: 0.57)),
+        ("ClineBot", "cline", "Cline", Color(red: 0.00, green: 0.70, blue: 0.49)),
     ]
 
     var body: some View {
