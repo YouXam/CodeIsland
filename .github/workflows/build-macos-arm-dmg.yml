@@ -36,11 +36,14 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Building version $VERSION"
 
-      - name: Select Xcode 26
+      - name: Select Xcode 16.4
         run: |
-          XCODE_APP="$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -type d | sort | tail -n 1)"
-          if [ -z "$XCODE_APP" ]; then
-            echo "Xcode 26 is required to compile AppIcon.icon"
+          XCODE_APP="/Applications/Xcode_16.4.app"
+          if [ ! -d "$XCODE_APP" ]; then
+            XCODE_APP="/Applications/Xcode.app"
+          fi
+          if [ ! -d "$XCODE_APP" ]; then
+            echo "Xcode 16.4 is required to build CodeIsland on macOS 15 runners"
             exit 1
           fi
           sudo xcode-select -s "$XCODE_APP/Contents/Developer"

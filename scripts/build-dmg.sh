@@ -77,6 +77,11 @@ sed -e "s/<string>${CURRENT_VER}<\/string>/<string>${VERSION}<\/string>/g" \
 # Compile app icon and asset catalog. Xcode's AssetCatalogAgent can crash
 # sporadically on GitHub-hosted macOS runners, so retry only this narrow step.
 compile_asset_catalog() {
+    local sources=("$REPO_ROOT/Assets.xcassets")
+    # AppIcon.icon is a Xcode 26+ format; only include if actool supports it.
+    if [ -d "$REPO_ROOT/AppIcon.icon" ] && xcrun actool --help 2>&1 | grep -q "icon"; then
+        sources+=("$REPO_ROOT/AppIcon.icon")
+    fi
     xcrun actool \
         --output-format human-readable-text \
         --notices --warnings --errors \
@@ -86,8 +91,7 @@ compile_asset_catalog() {
         --app-icon AppIcon \
         --output-partial-info-plist /dev/null \
         --compile "$CONTENTS_DIR/Resources" \
-        "$REPO_ROOT/Assets.xcassets" \
-        "$REPO_ROOT/AppIcon.icon"
+        "${sources[@]}"
 }
 
 compile_asset_catalog_with_retries() {
