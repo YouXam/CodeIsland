@@ -2016,9 +2016,6 @@ private struct SessionCard: View {
                             SessionTag("YOLO", color: Color(red: 1.0, green: 0.35, blue: 0.35))
                         }
                         SessionTag(timeAgo(session.startTime))
-                        if let remote = session.remoteDisplayName {
-                            SessionTag("@\(remote)", color: Color(red: 0.45, green: 0.72, blue: 1.0))
-                        }
                         if !session.isRemote {
                             TerminalBadge(session: session)
                         }
