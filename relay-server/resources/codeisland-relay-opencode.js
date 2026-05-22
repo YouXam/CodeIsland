@@ -137,6 +137,10 @@ export default {
           if (s.pendingTitle) { extra.codex_title = s.pendingTitle; s.pendingTitle = null; }
           return base(sid, extra);
         }
+        if (p.status?.type === "busy") {
+          return base(sid, { hook_event_name: "UserPromptSubmit", cwd,
+            prompt: s.lastUserText || undefined });
+        }
       }
       if (t === "message.updated" && p.info?.id && p.info?.sessionID) {
         msgRoles.set(p.info.id, { role: p.info.role, sessionID: p.info.sessionID });
@@ -151,8 +155,7 @@ export default {
         const text = p.part.text || "";
         if (meta.role === "user" && text) {
           s.lastUserText = text;
-          return base(`opencode-${meta.sessionID}`, {
-            hook_event_name: "UserPromptSubmit", cwd, prompt: text });
+          return null;
         }
         if (meta.role === "assistant" && text) { s.lastAssistantText = text; }
         return null;
